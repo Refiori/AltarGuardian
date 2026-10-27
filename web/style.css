@@ -1,0 +1,476 @@
+:root {
+    --bg-color: #1a1a1a;
+    --panel-bg: #2d2d2d;
+    --text-color: #e0e0e0;
+    --accent-color: #d4af37; /* Gold */
+    --border-color: #4a4a4a;
+    --danger-color: #a00;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    overflow: hidden;
+}
+
+#game-container {
+    width: 90%;
+    max-width: 800px;
+    background-color: var(--panel-bg);
+    border: 3px solid var(--accent-color);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.8);
+    display: flex;
+    flex-direction: column;
+    height: 90vh;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid var(--accent-color);
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+h1 {
+    margin: 0;
+    color: var(--accent-color);
+    font-size: 1.5rem;
+}
+
+.resource-bar {
+    display: flex;
+    gap: 20px;
+    font-weight: bold;
+}
+
+.resource-item span {
+    color: var(--accent-color);
+}
+
+main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.log-window {
+    flex: 1;
+    background-color: #000;
+    border: 1px solid var(--border-color);
+    padding: 15px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    color: #00ff00; /* Matrix-ish green for logs */
+    font-family: 'Courier New', Courier, monospace;
+    border-radius: 4px;
+}
+
+.status-display {
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    text-align: center;
+}
+
+footer {
+    border-top: 2px solid var(--accent-color);
+    padding-top: 20px;
+}
+
+.action-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.action-btn {
+    background-color: transparent;
+    color: var(--text-color);
+    border: 1px solid var(--accent-color);
+    padding: 10px;
+    cursor: pointer;
+    transition: all 0.3s;
+    border-radius: 4px;
+}
+
+.action-btn:hover {
+    background-color: var(--accent-color);
+    color: var(--bg-color);
+    box-shadow: 0 0 10px var(--accent-color);
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #222;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--accent-color);
+}
+
+/* ===== Этап 1: сцена ===== */
+#scene {
+    flex: 0 0 46%;
+    min-height: 160px;
+    margin-bottom: 15px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+    background: #0a0c24;
+}
+
+#scene svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+#scene .log-window { margin: 0; }
+
+.log-window { min-height: 70px; }
+
+/* Все анимированные части: transform-box нужен, чтобы вращение/масштаб шли от центра фигуры */
+#scene .star, #scene .window, #scene .flame, #scene .halo,
+#scene .crystal, #scene .spark, #scene .guard-body {
+    transform-box: fill-box;
+}
+
+.star { animation: twinkle 3s ease-in-out infinite; animation-delay: var(--d, 0s); }
+.window { animation: flicker-light 2.6s ease-in-out infinite; }
+.flame {
+    transform-origin: center bottom;
+    animation: flame 0.9s ease-in-out infinite;
+    animation-delay: var(--d, 0s);
+}
+.rune-ring { animation: rune 6s linear infinite; }
+.halo { transform-origin: center; animation: pulse 3.2s ease-in-out infinite; }
+.crystal { transform-origin: center; animation: float 3.6s ease-in-out infinite; }
+.spark { animation: spark 3s ease-out infinite; animation-delay: var(--d, 0s); }
+.guard-body { animation: bob 2.4s ease-in-out infinite; animation-delay: var(--d, 0s); }
+
+@keyframes twinkle { 50% { opacity: .15; } }
+@keyframes flicker-light { 50% { opacity: .6; } }
+@keyframes flame { 50% { transform: scale(1.15, 1.3); } }
+@keyframes rune { to { stroke-dashoffset: -64; } }
+@keyframes pulse { 50% { opacity: .55; transform: scale(1.12); } }
+@keyframes float { 50% { transform: translateY(-6px); } }
+@keyframes spark {
+    0%   { transform: translateY(0); opacity: 0; }
+    20%  { opacity: 1; }
+    100% { transform: translateY(-40px); opacity: 0; }
+}
+@keyframes bob { 50% { transform: translateY(-1.5px); } }
+
+@media (prefers-reduced-motion: reduce) {
+    #scene * { animation: none !important; }
+}
+
+/* ===== Этап 2: сцена зависит от состояния игры ===== */
+
+/* Появление стражника при обучении */
+.guard-slot {
+    transform-box: fill-box;
+    transition: opacity .7s ease, transform .7s ease;
+}
+.guard-slot.hidden {
+    opacity: 0;
+    transform: translateY(-16px);
+}
+
+/* Повреждения стен: уровни накапливаются, при починке исчезают */
+.dmg { opacity: 0; transition: opacity .8s ease; }
+.crack, .crack path { fill: none; stroke: #12112a; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.rubble polygon { fill: #625f76; stroke: #000; stroke-opacity: .35; stroke-width: .6; }
+
+#scene:is([data-damage="1"], [data-damage="2"], [data-damage="3"]) .dmg-1,
+#scene:is([data-damage="2"], [data-damage="3"]) .dmg-2,
+#scene[data-damage="3"] .dmg-3 { opacity: 1; }
+
+#walls, #walls-front { transition: filter .8s ease; }
+#scene[data-damage="2"] #walls, #scene[data-damage="2"] #walls-front { filter: brightness(.85); }
+#scene[data-damage="3"] #walls, #scene[data-damage="3"] #walls-front { filter: brightness(.7) saturate(.8); }
+
+@media (prefers-reduced-motion: reduce) {
+    #scene *, #walls, #walls-front { transition: none !important; }
+}
+
+/* ===== Этап 3: анимации дневных действий ===== */
+#scene { position: relative; }
+
+/* Всплывающие надписи */
+.float-fx {
+    position: absolute;
+    transform: translateX(-50%);
+    font-weight: bold;
+    font-size: 1.1rem;
+    white-space: nowrap;
+    text-shadow: 0 0 6px #000, 0 1px 2px #000;
+    pointer-events: none;
+    animation: float-up 1.6s ease-out forwards;
+}
+.float-supply  { color: #f0c36a; }
+.float-fortify { color: #b8c4ff; }
+.float-train   { color: #ffd84d; }
+.float-rest    { color: #8ff5ff; }
+
+@keyframes float-up {
+    0%   { opacity: 0; transform: translate(-50%, 8px); }
+    15%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -48px); }
+}
+
+/* Сбор провизии: тележка с ящиками приезжает слева */
+.cart { opacity: 0; transform: translateX(-60px); }
+.wheel { transform-box: fill-box; transform-origin: center; }
+#scene.fx-supply .cart { animation: cart-run 1.7s ease-in-out forwards; }
+#scene.fx-supply .wheel { animation: spin .5s linear infinite; }
+@keyframes cart-run {
+    0%   { opacity: 0; transform: translateX(-60px); }
+    12%  { opacity: 1; }
+    50%, 72% { opacity: 1; transform: translateX(230px); }
+    100% { opacity: 0; transform: translateX(340px); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Укрепление стен: строители с молотами, искры, вспышка на камне */
+.builder { opacity: 0; transition: opacity .3s ease; }
+.hammer { transform-origin: 0 0; transform: rotate(-35deg); }
+.hspark { opacity: 0; }
+#scene.fx-fortify .builder { opacity: 1; }
+#scene.fx-fortify .hammer { animation: hammer .5s ease-in-out 3; }
+#scene.fx-fortify .hspark { animation: hspark .5s ease-out 3; }
+#scene.fx-fortify #walls, #scene.fx-fortify #walls-front { animation: repair-flash 1.5s ease-out; }
+@keyframes hammer {
+    0%, 100% { transform: rotate(-35deg); }
+    50%      { transform: rotate(15deg); }
+}
+@keyframes hspark {
+    0%, 45% { opacity: 0; transform: translate(0, 0); }
+    50%     { opacity: 1; }
+    100%    { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+}
+@keyframes repair-flash {
+    0%   { filter: brightness(1); }
+    25%  { filter: brightness(1.6) sepia(.4); }
+    100% { filter: brightness(1); }
+}
+
+/* Обучение: стражники подпрыгивают с золотым свечением, по площадке бежит кольцо */
+.train-ring { opacity: 0; transform-box: fill-box; transform-origin: center; vector-effect: non-scaling-stroke; }
+#scene.fx-train .guard-body {
+    transform-origin: 50% 100%;
+    animation: cheer .55s ease-in-out 3;
+    filter: drop-shadow(0 0 4px #ffd84d);
+}
+#scene.fx-train .train-ring { animation: train-ring .85s ease-out 2; }
+@keyframes cheer {
+    0%, 100% { transform: translateY(0) scale(1); }
+    40%      { transform: translateY(-9px) scale(1.06); }
+}
+@keyframes train-ring {
+    0%   { opacity: .9; transform: scale(1); }
+    100% { opacity: 0;  transform: scale(9); }
+}
+
+/* Отдых: частицы маны слетаются к кристаллу, он вспыхивает */
+.mote { opacity: 0; }
+.crystal { transition: filter .4s ease; }
+#scene.fx-rest .mote { animation: mote 1.3s ease-in forwards; animation-delay: var(--d, 0s); }
+#scene.fx-rest .halo { animation: halo-burst 1.6s ease-out; }
+#scene.fx-rest .crystal { filter: drop-shadow(0 0 8px #9ff7ff) brightness(1.4); }
+@keyframes mote {
+    0%   { opacity: 0; transform: translate(0, 0) scale(1); }
+    20%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.4); }
+}
+@keyframes halo-burst {
+    0%   { opacity: .65; transform: scale(1); }
+    40%  { opacity: 1;   transform: scale(2); }
+    100% { opacity: .65; transform: scale(1); }
+}
+
+/* ===== Этап 4: ночь ===== */
+.action-btn:disabled { opacity: .4; cursor: not-allowed; }
+.action-btn:disabled:hover {
+    background-color: transparent;
+    color: var(--text-color);
+    box-shadow: none;
+}
+
+/* Затемнение сцены ночью */
+#night-shade, #shield, #hit-flash { opacity: 0; pointer-events: none; }
+#night-shade { transition: opacity .8s ease; }
+#scene.is-night #night-shade { opacity: .4; }
+
+.enemy-body { animation: enemy-hop .28s ease-in-out infinite; }
+@keyframes enemy-hop { 50% { transform: translateY(-3px); } }
+
+/* Отражённая атака: щит, молнии, вспышка кристалла */
+#shield { transform-box: fill-box; transform-origin: center; }
+#scene.fx-defend #shield { animation: shield-flash 1.3s ease-out; }
+@keyframes shield-flash {
+    0%   { opacity: 0;  transform: scale(.6); }
+    25%  { opacity: .9; transform: scale(1); }
+    100% { opacity: 0;  transform: scale(1.1); }
+}
+.bolt {
+    stroke: #9ff7ff;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 4px #9ff7ff);
+    opacity: 0;
+    animation: bolt .4s ease-out both;
+}
+@keyframes bolt {
+    0%   { opacity: 0; }
+    20%  { opacity: 1; }
+    100% { opacity: 0; stroke-width: 0.5; }
+}
+#scene.fx-gain .halo { animation: halo-burst .9s ease-out; }
+#scene.fx-gain .crystal { filter: drop-shadow(0 0 8px #c9a7ff) brightness(1.4); }
+
+/* Прорыв: тряска, красная вспышка, стены вздрагивают */
+#scene.fx-hit svg { animation: shake .5s linear; }
+#scene.fx-hit #hit-flash { animation: hit-flash .6s ease-out; }
+#scene.fx-hit #walls, #scene.fx-hit #walls-front { animation: wall-hit .6s ease-out; }
+@keyframes shake {
+    0%, 100% { transform: translate(0, 0); }
+    15% { transform: translate(-6px, 3px); }
+    30% { transform: translate(5px, -3px); }
+    45% { transform: translate(-4px, 2px); }
+    60% { transform: translate(3px, -2px); }
+    80% { transform: translate(-2px, 1px); }
+}
+@keyframes hit-flash {
+    0%   { opacity: .4; }
+    100% { opacity: 0; }
+}
+@keyframes wall-hit {
+    0%   { filter: brightness(2.2) sepia(.6) hue-rotate(-30deg); }
+    100% { filter: brightness(1); }
+}
+
+.float-fragments { color: #c9a7ff; }
+.float-damage    { color: #ff6b6b; }
+
+/* ===== Этап 5: день и ночь, финал, адаптив ===== */
+
+/* Небо: днём светлое, ночью (класс is-night) тёмное со звёздами и луной */
+#sky-day { transition: opacity 1s ease; }
+#scene.is-night #sky-day, #scene.is-defeat #sky-day { opacity: 0; }
+
+#stars, .moon, .sun { transition: opacity 1s ease, transform 1.2s ease; }
+#stars { opacity: 0; }
+.moon { opacity: 0; transform: translateY(70px); }
+.sun { filter: drop-shadow(0 0 14px #ffe9a8); }
+#scene.is-night #stars, #scene.is-defeat #stars { opacity: 1; }
+#scene.is-night .moon, #scene.is-defeat .moon { opacity: .85; transform: none; }
+#scene.is-night .sun, #scene.is-defeat .sun { opacity: 0; transform: translateY(90px); }
+
+.hill-far  { fill: #4a5b82; transition: fill 1s ease; }
+.hill-near { fill: #3a4a52; transition: fill 1s ease; }
+#scene.is-night .hill-far, #scene.is-defeat .hill-far   { fill: #171431; }
+#scene.is-night .hill-near, #scene.is-defeat .hill-near { fill: #221f36; }
+
+/* Прогресс дней */
+.day-progress { height: 4px; background: #1b1b1b; border-radius: 2px; margin: -12px 0 12px; overflow: hidden; }
+#day-progress-fill {
+    height: 100%; width: 0;
+    background: linear-gradient(90deg, #8a6d1f, var(--accent-color));
+    transition: width .8s ease;
+}
+
+.float-day, .float-night { font-size: 1.6rem; letter-spacing: .08em; }
+.float-day   { color: #ffe9a8; }
+.float-night { color: #b8a8ff; }
+
+/* Лог: новые строки плавно появляются */
+.log-window p { margin: 3px 0; animation: log-in .4s ease-out; }
+@keyframes log-in { from { opacity: 0; transform: translateX(-6px); } }
+
+/* Победа: рассвет, лучи, стражники ликуют */
+#rays { opacity: 0; transition: opacity 1.5s ease; transform-origin: 400px 200px; }
+#scene.is-victory #rays { opacity: .45; animation: rays-spin 40s linear infinite; }
+@keyframes rays-spin { to { transform: rotate(360deg); } }
+#scene.is-victory .guard-body {
+    transform-origin: 50% 100%;
+    animation: cheer .7s ease-in-out infinite;
+    filter: drop-shadow(0 0 4px #ffd84d);
+}
+#scene.is-victory .halo { animation: halo-burst 2s ease-out infinite; }
+
+/* Поражение: серые краски, кристалл раскалывается, стражники падают */
+#scene svg { transition: filter 1s ease; }
+#scene.is-defeat svg { filter: grayscale(.7) brightness(.75); }
+#scene.is-defeat .crystal { animation: crystal-shatter .9s ease-out forwards; }
+#scene.is-defeat .halo { animation: none; opacity: 0; }
+#scene.is-defeat .spark { animation: none; opacity: 0; }
+#scene.is-defeat .guard-body {
+    transform-origin: 50% 100%;
+    animation: guard-fall .8s ease-in forwards;
+}
+@keyframes crystal-shatter {
+    0%   { opacity: 1; transform: scale(1); }
+    30%  { opacity: 1; transform: scale(1.5); filter: brightness(3); }
+    100% { opacity: 0; transform: scale(.2); }
+}
+@keyframes guard-fall { to { transform: rotate(80deg) translateY(2px); } }
+
+/* Экран конца игры */
+#game-container { position: relative; }
+#end-screen {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px; text-align: center;
+    background: rgba(10, 8, 24, .88);
+    border-radius: 5px;
+    opacity: 0; pointer-events: none;
+    transition: opacity .8s ease;
+}
+#end-screen.visible { opacity: 1; pointer-events: auto; }
+#end-screen h2 { margin: 0; font-size: 2rem; color: var(--accent-color); }
+#end-screen.defeat h2 { color: #ff6b6b; }
+#end-screen p { margin: 0; max-width: 420px; }
+#end-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; margin: 6px 0 10px; }
+.stat { font-size: .85rem; opacity: .9; }
+.stat span { display: block; font-size: 1.6rem; font-weight: bold; color: var(--accent-color); }
+#restart-btn { padding: 12px 28px; font-size: 1rem; }
+
+/* Высота экрана на телефонах (если dvh не поддерживается, остаётся vh) */
+body { height: 100dvh; }
+#game-container { height: 90dvh; }
+.action-btn { touch-action: manipulation; }
+
+@media (max-width: 600px) {
+    #game-container { width: 96%; height: 96dvh; padding: 12px; }
+    header { flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 14px; }
+    h1 { font-size: 1.2rem; }
+    .resource-bar { flex-wrap: wrap; gap: 6px 14px; font-size: .85rem; }
+    #scene { flex-basis: 38%; margin-bottom: 10px; }
+    .log-window { padding: 10px; margin-bottom: 10px; font-size: .85rem; }
+    .action-panel { grid-template-columns: repeat(2, 1fr); }
+    .action-btn { padding: 12px 6px; font-size: .85rem; }
+    footer { padding-top: 12px; }
+    .float-fx { font-size: .95rem; }
+    .float-day, .float-night { font-size: 1.3rem; }
+    #end-screen h2 { font-size: 1.6rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #end-screen, #day-progress-fill, #sky-day, #stars, .moon, .sun, .hill-far, .hill-near, #rays { transition: none !important; }
+    .log-window p, #scene.is-victory #rays { animation: none !important; }
+}
