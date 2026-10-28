@@ -8,7 +8,8 @@ const gameData = {
     guardStrength: 40,
     isGameOver: false,
     isBusy: false,
-    victory: false
+    victory: false,
+    actionCounts: {} // Счетчик повторов действий
 };
 
 const logElement = document.getElementById('game-log');
@@ -281,6 +282,28 @@ const game = {
     handleAction(type) {
         if (gameData.isGameOver || gameData.victory || gameData.isBusy) return;
 
+        // ===== Этап 2: Баланс и стоимость действий =====
+        const actionCosts = {
+            supply: { mana: 5, supplies: 0 },
+            fortify: { mana: 15, supplies: 0 },
+            train: { mana: 10, supplies: 5 },
+            rest: { mana: 0, supplies: 10 }
+        };
+
+        const cost = actionCosts[type] || { mana: 0, supplies: 0 };
+        if (gameData.mana < cost.mana || gameData.supplies < cost.supplies) {
+            logMessage("Недостаточно ресурсов для этого действия!");
+            return;
+        }
+
+        // Списание стоимости
+        gameData.mana -= cost.mana;
+        gameData.supplies -= cost.supplies;
+
+        // Эффект убывания (Diminishing Returns)
+        gameData.actionCounts[type] = (gameData.actionCounts[type] || 0) + 1;
+        const multiplier = Math.max(0.3, 1 - (gameData.actionCounts[type] - 1) * 0.2);
+
         // Пока идут день и ночь, новые действия недоступны
         gameData.isBusy = true;
         setActionsEnabled(false);
@@ -290,20 +313,24 @@ const game = {
 
         switch(type) {
             case 'supply':
-                gameData.supplies += 20;
-                actionMessage = "Вы собрали дополнительные припасы (+20 Supplies).";
+                const sGain = Math.floor(20 * multiplier);
+                gameData.supplies += sGain;
+                actionMessage = `Вы собрали припасы (+${sGain} Supplies). Эффективность: ${Math.round(multiplier * 100)}%`;
                 break;
             case 'fortify':
-                gameData.wallHealth = Math.min(100, gameData.wallHealth + 20);
-                actionMessage = "Вы укрепили стены (+20 Wall Health).";
+                const fGain = Math.floor(20 * multiplier);
+                gameData.wallHealth = Math.min(100, gameData.wallHealth + fGain);
+                actionMessage = `Вы укрепили стены (+${fGain} Wall Health). Эффективность: ${Math.round(multiplier * 100)}%`;
                 break;
             case 'train':
-                gameData.guardStrength += 10;
-                actionMessage = "Стражники стали опытнее (+10 Guard Strength).";
+                const tGain = Math.floor(10 * multiplier);
+                gameData.guardStrength += tGain;
+                actionMessage = `Стражники стали опытнее (+${tGain} Guard Strength). Эффективность: ${Math.round(multiplier * 100)}%`;
                 break;
             case 'rest':
-                gameData.mana = Math.min(100, gameData.mana + 30);
-                actionMessage = "Вы отдохнули и восстановили ману (+30 Mana).";
+                const rGain = Math.floor(30 * multiplier);
+                gameData.mana = Math.min(100, gameData.mana + rGain);
+                actionMessage = `Вы отдохнули и восстановили ману (+${rGain} Mana). Эффективность: ${Math.round(multiplier * 100)}%`;
                 break;
             default:
                 actionMessage = "Вы потратили время впустую.";
