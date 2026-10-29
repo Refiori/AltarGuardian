@@ -20,7 +20,7 @@ Survival strategy where the player defends a magical Altar from the Void for 30 
 - Action costs (Mana/Supplies).
 - Diminishing returns for repeated actions.
 
-### Stage 3: Wave Warning (IN PROGRESS)
+### Stage 3: Wave Warning (COMPLETED)
 - Morning forecast of the coming night's power.
 - Conscious preparation instead of guessing.
 
