@@ -411,7 +411,9 @@ const game = {
                 gameData.victory = true;
                 logMessage("Вы выстояли все 30 дней! Вы победили!");
             } else {
+                const nextEnemyPower = 15 + (gameData.day * 2);
                 logMessage(`--- День ${gameData.day} --- Наступил новый день.`);
+                logMessage(`Разведка сообщает: следующая волна будет иметь силу ${nextEnemyPower}.`);
                 showFloatingText(`День ${gameData.day}`, 'day', 50, 30);
             }
         }
