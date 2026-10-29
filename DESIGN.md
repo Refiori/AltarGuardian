@@ -1,38 +1,64 @@
-# Хранитель Алтаря (Altar Guardian)
+# Altar Guardian - Design Document
 
-Это RPG-стратегия с элементами выживания, где игрок управляет древним защитником магического алтаря, защищая его от набегов существ из Пустоты.
+## 🎮 Game Concept
+Survival strategy where the player defends a magical Altar from the Void for 30 days.
 
-## Основная концепция
-Игрок должен управлять ограниченными ресурсами, развивать базу и выживать в условиях постоянной угрозы. Ресурсы ограничены, и каждое решение влияет на выживание базы.
+## 🛠 Technical Stack
+- **Frontend**: HTML5, CSS3, JavaScript.
+- **Current Graphics**: SVG (to be upgraded to Three.js / Low-poly 3D).
+- **Perspective**: Isometric (top-down side view, like Clash of Clans).
+- **Version Control**: GitHub.
 
-## Геймплейные циклы
-Игра построена на цикле «День / Ночь»:
+## 📈 Development Roadmap (10 Stages)
 
-### 1. Фаза Дня (Подготовка)
-В этот период игрок совершает административные действия:
-- **Распределение ресурсов:** Провизия для стражников, ресурсы для постройки.
-- **Строительство:** Возведение стен, башен и магических турелей.
-- **Обучение:** Распределение навыков среди доступных стражников.
-- **Исследования:** Изучение найденных фрагментов для получения новых технологий.
+### Stage 1: Real Resources (COMPLETED)
+- Supply consumption per guard.
+- Guard strength penalty during hunger.
+- Mana cost for shield and spells.
 
-### 2. Фаза Ночи (Нашествие)
-Происходит автоматизированное сражение:
-- Во время ночи из Пустоты нападают волны врагов.
-- Игрок управляет обороной в реальном времени или пошагово (в зависимости от выбранного интерфейса), отдавая приказы: «Усилить щит», «Призвать стражников», «Атаковать».
-- Оборона должна учитывать слабые места строений и типов врагов.
+### Stage 2: Meaningful Choice (COMPLETED)
+- Action costs (Mana/Supplies).
+- Diminishing returns for repeated actions.
 
-### 3. Фаза Отдыха (Анализ)
-После отступления врагов:
-- Анализ потерь и ресурсов.
-- Получение наград за успешную оборону.
-- Выбор следующего улучшения из доступного списка.
+### Stage 3: Wave Warning (IN PROGRESS)
+- Morning forecast of the coming night's power.
+- Conscious preparation instead of guessing.
 
-## Ресурсы
-- **Энергия (Mana):** Тратится на магические защиты и заклинания. Восстанавливается со временем.
-- **Провизия (Supplies):** Необходима для поддержания жизнедеятельности стражников и работы производственных цехов.
-- **Материя (Fragments):** Собирается с поверженных врагов. Используется для улучшения оборудования и открытия новых технологий.
+### Stage 4: Matter & Upgrades
+- Spend fragments on:
+    - Turrets and Towers.
+    - Wall reinforcements.
+    - New active abilities.
+- Visual appearance of buildings on the scene.
 
-## Прогрессия
-- **Цель:** Выстоять 30 дней непрерывной обороны.
-- **Уровни сложности:** Различные типы врагов и интенсивность набегов.
-- **Разблокировки:** Новые здания и магические приемы открываются по мере достижения определенных вех в прогрессии.
+### Stage 5: Enemy Types & Bosses
+- Enemy classes: Runners (fast), Armored (tanky), Flying (bypass some defenses).
+- Bosses on days 10, 20, 30.
+- Requirement for specific upgrades to counter specific enemies.
+
+### Stage 6: Night Orders
+- Active commands during battle: "Boost Shield", "Summon Guards", "Focused Attack".
+- Mana consumption for active spells.
+
+### Stage 7: Random Events
+- Dynamic events: Merchant, Fire, Meteorite, Plague.
+- Impact on resources and guard morale.
+
+### Stage 8: Persistence & Difficulty
+- Auto-save system.
+- High-score table.
+- Difficulty levels (Easy, Normal, Hardcore).
+
+### Stage 9: Audio & Music
+- Day/Night ambient music.
+- Combat sound effects (lightning, impact, victory).
+
+### Stage 10: Living Guards
+- Individual guard profiles: Names, Classes, Leveling.
+- Permanent death and loss of experience.
+
+## 🎨 Visual Overhaul (The 3D Transition)
+- **Engine**: Transition from SVG $\rightarrow$ Three.js.
+- **Style**: Low-poly, neon accents, dark atmospheric environment.
+- **Camera**: Isometric Orthographic.
+- **VFX**: Energy domes, particle-based magic, physical wall destruction.
