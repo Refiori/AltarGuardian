@@ -5,11 +5,17 @@ const gameData = {
     supplies: 50,
     fragments: 0,
     wallHealth: 100,
+    maxWallHealth: 100,
     guardStrength: 40,
     isGameOver: false,
     isBusy: false,
     victory: false,
-    actionCounts: {} // Счетчик повторов действий
+    actionCounts: {}, 
+    upgrades: {
+        wallLevel: 1,
+        turrets: 0,
+        manaRegen: 1
+    }
 };
 
 const logElement = document.getElementById('game-log');
@@ -90,7 +96,7 @@ function updateUI() {
     document.getElementById('mana-count').innerText = gameData.mana;
     document.getElementById('supplies-count').innerText = gameData.supplies;
     document.getElementById('fragments-count').innerText = gameData.fragments;
-    document.getElementById('wall-health').innerText = gameData.wallHealth;
+    document.getElementById('wall-health').innerText = `${gameData.wallHealth}/${gameData.maxWallHealth}`;
     document.getElementById('guard-strength').innerText = gameData.guardStrength;
 
     if (gameData.wallHealth <= 0) {
@@ -284,25 +290,33 @@ const game = {
 
         // ===== Этап 2: Баланс и стоимость действий =====
         const actionCosts = {
-            supply: { mana: 5, supplies: 0 },
-            fortify: { mana: 15, supplies: 0 },
-            train: { mana: 10, supplies: 5 },
-            rest: { mana: 0, supplies: 10 }
+            supply: { mana: 5, supplies: 0, fragments: 0 },
+            fortify: { mana: 15, supplies: 0, fragments: 0 },
+            train: { mana: 10, supplies: 5, fragments: 0 },
+            rest: { mana: 0, supplies: 10, fragments: 0 },
+            upgradeWall: { mana: 0, supplies: 0, fragments: 10 },
+            buildTurret: { mana: 0, supplies: 0, fragments: 25 }
         };
 
-        const cost = actionCosts[type] || { mana: 0, supplies: 0 };
-        if (gameData.mana < cost.mana || gameData.supplies < cost.supplies) {
+        const cost = actionCosts[type] || { mana: 0, supplies: 0, fragments: 0 };
+        if (gameData.mana < (cost.mana || 0) || 
+            gameData.supplies < (cost.supplies || 0) || 
+            gameData.fragments < (cost.fragments || 0)) {
             logMessage("Недостаточно ресурсов для этого действия!");
             return;
         }
 
         // Списание стоимости
-        gameData.mana -= cost.mana;
-        gameData.supplies -= cost.supplies;
+        gameData.mana -= (cost.mana || 0);
+        gameData.supplies -= (cost.supplies || 0);
+        gameData.fragments -= (cost.fragments || 0);
 
-        // Эффект убывания (Diminishing Returns)
-        gameData.actionCounts[type] = (gameData.actionCounts[type] || 0) + 1;
-        const multiplier = Math.max(0.3, 1 - (gameData.actionCounts[type] - 1) * 0.2);
+        // Эффект убывания (Diminishing Returns) - только для базовых действий
+        let multiplier = 1;
+        if (['supply', 'fortify', 'train', 'rest'].includes(type)) {
+            gameData.actionCounts[type] = (gameData.actionCounts[type] || 0) + 1;
+            multiplier = Math.max(0.3, 1 - (gameData.actionCounts[type] - 1) * 0.2);
+        }
 
         // Пока идут день и ночь, новые действия недоступны
         gameData.isBusy = true;
@@ -319,7 +333,7 @@ const game = {
                 break;
             case 'fortify':
                 const fGain = Math.floor(20 * multiplier);
-                gameData.wallHealth = Math.min(100, gameData.wallHealth + fGain);
+                gameData.wallHealth = Math.min(gameData.maxWallHealth, gameData.wallHealth + fGain);
                 actionMessage = `Вы укрепили стены (+${fGain} Wall Health). Эффективность: ${Math.round(multiplier * 100)}%`;
                 break;
             case 'train':
@@ -331,6 +345,16 @@ const game = {
                 const rGain = Math.floor(30 * multiplier);
                 gameData.mana = Math.min(100, gameData.mana + rGain);
                 actionMessage = `Вы отдохнули и восстановили ману (+${rGain} Mana). Эффективность: ${Math.round(multiplier * 100)}%`;
+                break;
+            case 'upgradeWall':
+                gameData.upgrades.wallLevel++;
+                gameData.maxWallHealth += 50;
+                gameData.wallHealth += 50;
+                actionMessage = `Стены усилены до уровня ${gameData.upgrades.wallLevel}! Макс. здоровье: ${gameData.maxWallHealth}`;
+                break;
+            case 'buildTurret':
+                gameData.upgrades.turrets++;
+                actionMessage = `Построена магическая турель! Всего турелей: ${gameData.upgrades.turrets}. Оборона усилена.`;
                 break;
             default:
                 actionMessage = "Вы потратили время впустую.";
