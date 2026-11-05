@@ -19,7 +19,9 @@ const gameData = {
     activeSpells: {
         shieldBoost: false,
         guardCall: false
-    }
+    },
+    difficulty: 'normal',
+    bestDay: 0
 };
 
 const logElement = document.getElementById('game-log');
@@ -270,52 +272,47 @@ async function playBreach(enemies, damage, onImpact) {
     clearEnemies(enemies);
 }
 
-// ===== Этап 7: Случайные события =====
-function triggerRandomEvent() {
-    const events = [
-        { 
-            name: "Торговец Пустоты", 
-            msg: "Странный торговец предлагает сделку: 10 маны за 20 провизии.", 
-            action: () => {
-                if (gameData.mana >= 10) {
-                    gameData.mana -= 10;
-                    gameData.supplies += 20;
-                    return "Вы совершили сделку! (+20 провизии, -10 маны)";
-                }
-                return "У вас недостаточно маны для сделки.";
-            }
-        },
-        { 
-            name: "Пожар в лагере", 
-            msg: "Небольшой пожар уничтожил часть припасов!", 
-            action: () => {
-                const loss = Math.floor(gameData.supplies * 0.2);
-                gameData.supplies -= loss;
-                return `Потеряно ${loss} единиц провизии.`;
-            }
-        },
-        { 
-            name: "Метеорит", 
-            msg: "Осколок звезды упал рядом с алтарем!", 
-            action: () => {
-                gameData.fragments += 15;
-                return "Вы нашли 15 фрагментов материи!";
-            }
-        },
-        { 
-            name: "Болезнь стражи", 
-            msg: "Эпидемия ослабила бойцов!", 
-            action: () => {
-                const penalty = 5;
-                gameData.guardStrength = Math.max(0, gameData.guardStrength - penalty);
-                return `Сила стражи упала на ${penalty}.`;
-            }
-        }
-    ];
+// ===== Этап 6: Приказы во время ночи =====
+async function handleNightOrder(orderType) {
+    if (gameData.isBusy || gameData.isGameOver) return;
 
-    const event = events[Math.floor(Math.random() * events.length)];
-    logMessage(`[СОБЫТИЕ] ${event.name}: ${event.msg}`);
-    return event.action();
+    const orders = {
+        shield: { cost: 20, msg: "Щит усилен! Урон по стенам снижен." },
+        guards: { cost: 15, msg: "Призыв подкрепления! Сила стражи временно выросла." },
+        attack: { cost: 25, msg: "Фокусированная атака! Враги уничтожаются быстрее." }
+    };
+
+    const order = orders[orderType];
+    if (gameData.mana < order.cost) {
+        logMessage("Недостаточно маны для приказа!");
+        return;
+    }
+
+    gameData.mana -= order.cost;
+    logMessage(`Приказ: ${order.msg} (-${order.cost} маны)`);
+    updateUI();
+    
+    if (orderType === 'shield') gameData.activeSpells.shieldBoost = true;
+    if (orderType === 'guards') gameData.activeSpells.guardCall = true;
+}
+
+// ===== Этап 8: Сохранения и сложность =====
+function saveGame() {
+    localStorage.setItem('altarGuardianSave', JSON.stringify(gameData));
+}
+
+function loadGame() {
+    const saved = localStorage.getItem('altarGuardianSave');
+    if (saved) {
+        const data = JSON.parse(saved);
+        Object.assign(gameData, data);
+        logMessage("Прогресс загружен из сохранения.");
+    }
+}
+
+function setDifficulty(level) {
+    gameData.difficulty = level;
+    logMessage(`Сложность установлена: ${level}`);
 }
 const endScreen = document.getElementById('end-screen');
 
