@@ -15,6 +15,10 @@ const gameData = {
         wallLevel: 1,
         turrets: 0,
         manaRegen: 1
+    },
+    activeSpells: {
+        shieldBoost: false,
+        guardCall: false
     }
 };
 
@@ -131,28 +135,33 @@ function setActionsEnabled(enabled) {
     document.querySelectorAll('.action-btn').forEach(btn => { btn.disabled = !enabled; });
 }
 
-// Чем сильнее волна, тем больше врагов на сцене (от 2 до 8)
-function getEnemyCount(power) {
-    return Math.max(2, Math.min(8, Math.round(power / 12)));
+// ===== Этап 5: Типы врагов и боссы =====
+function getEnemyType(day) {
+    if (day % 10 === 0) return 'boss';
+    const randVal = Math.random();
+    if (randVal < 0.2) return 'runner'; // Быстрые
+    if (randVal < 0.4) return 'armored'; // Бронированные
+    if (randVal < 0.6) return 'flyer';   // Летающие
+    return 'normal';
 }
 
-// Облако дыма
-function puff(x, y, color, size = 4) {
-    const c = svgEl('circle', { cx: x, cy: y, r: size, fill: color });
-    c.style.transformBox = 'fill-box';
-    c.style.transformOrigin = 'center';
-    enemiesLayer.appendChild(c);
-    c.animate(
-        [{ transform: 'scale(1)', opacity: .85 }, { transform: 'scale(4)', opacity: 0 }],
-        { duration: 500, easing: 'ease-out', fill: 'forwards' }
-    ).onfinish = () => c.remove();
+function getEnemyStats(type, day) {
+    const basePower = 15 + (day * 2);
+    switch(type) {
+        case 'boss': return { power: basePower * 3, name: 'БОСС ПУСТОТЫ', color: '#ff00ff', health: 500 };
+        case 'runner': return { power: basePower * 0.7, name: 'Бегун', color: '#ffff00', speed: 1.5 };
+        case 'armored': return { power: basePower * 1.3, name: 'Танк', color: '#888888', defense: 10 };
+        case 'flyer': return { power: basePower * 0.9, name: 'Летун', color: '#00ffff', bypass: true };
+        default: return { power: basePower, name: 'Тень', color: '#ffffff' };
+    }
 }
 
-// Враги выбегают с краёв сцены и занимают места у стен
-function sendWave(power) {
+async function sendWave(power) {
     if (reduceMotion) return wait(300).then(() => []);
 
-    const count = getEnemyCount(power);
+    const type = getEnemyType(gameData.day);
+    const stats = getEnemyStats(type, gameData.day);
+    const count = type === 'boss' ? 1 : getEnemyCount(power);
     const enemies = [];
     for (let i = 0; i < count; i++) {
         const fromLeft = i % 2 === 0;
@@ -162,16 +171,18 @@ function sendWave(power) {
 
         const g = svgEl('g');
         const body = svgEl('g', { class: 'enemy-body' });
+        body.setAttribute('fill', stats.color);
         body.appendChild(svgEl('use', { href: '#enemy-shape' }));
         g.appendChild(body);
         enemiesLayer.appendChild(g);
 
+        const speedMult = stats.speed || 1;
         g.animate([
             { transform: `translate(${fromLeft ? -40 : 840}px, ${y}px)`, opacity: 0 },
             { transform: `translate(${x}px, ${y}px)`, opacity: 1 }
-        ], { duration: 1300, delay: i * 90, easing: 'ease-out', fill: 'both' });
+        ], { duration: 1300 / speedMult, delay: i * 90, easing: 'ease-out', fill: 'both' });
 
-        enemies.push({ g, x, y });
+        enemies.push({ g, x, y, type, stats });
     }
     return wait(1300 + (count - 1) * 90 + 150).then(() => enemies);
 }
@@ -259,7 +270,53 @@ async function playBreach(enemies, damage, onImpact) {
     clearEnemies(enemies);
 }
 
-// ===== Этап 5: финал игры =====
+// ===== Этап 7: Случайные события =====
+function triggerRandomEvent() {
+    const events = [
+        { 
+            name: "Торговец Пустоты", 
+            msg: "Странный торговец предлагает сделку: 10 маны за 20 провизии.", 
+            action: () => {
+                if (gameData.mana >= 10) {
+                    gameData.mana -= 10;
+                    gameData.supplies += 20;
+                    return "Вы совершили сделку! (+20 провизии, -10 маны)";
+                }
+                return "У вас недостаточно маны для сделки.";
+            }
+        },
+        { 
+            name: "Пожар в лагере", 
+            msg: "Небольшой пожар уничтожил часть припасов!", 
+            action: () => {
+                const loss = Math.floor(gameData.supplies * 0.2);
+                gameData.supplies -= loss;
+                return `Потеряно ${loss} единиц провизии.`;
+            }
+        },
+        { 
+            name: "Метеорит", 
+            msg: "Осколок звезды упал рядом с алтарем!", 
+            action: () => {
+                gameData.fragments += 15;
+                return "Вы нашли 15 фрагментов материи!";
+            }
+        },
+        { 
+            name: "Болезнь стражи", 
+            msg: "Эпидемия ослабила бойцов!", 
+            action: () => {
+                const penalty = 5;
+                gameData.guardStrength = Math.max(0, gameData.guardStrength - penalty);
+                return `Сила стражи упала на ${penalty}.`;
+            }
+        }
+    ];
+
+    const event = events[Math.floor(Math.random() * events.length)];
+    logMessage(`[СОБЫТИЕ] ${event.name}: ${event.msg}`);
+    return event.action();
+}
 const endScreen = document.getElementById('end-screen');
 
 async function showEnding(win) {
@@ -435,6 +492,12 @@ const game = {
                 gameData.victory = true;
                 logMessage("Вы выстояли все 30 дней! Вы победили!");
             } else {
+                // ===== Этап 7: Случайные события =====
+                if (Math.random() < 0.3) {
+                    const eventResult = triggerRandomEvent();
+                    logMessage(`Результат: ${eventResult}`);
+                }
+                
                 const nextEnemyPower = 15 + (gameData.day * 2);
                 logMessage(`--- День ${gameData.day} --- Наступил новый день.`);
                 logMessage(`Разведка сообщает: следующая волна будет иметь силу ${nextEnemyPower}.`);
