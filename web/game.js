@@ -112,11 +112,39 @@ function updateUI() {
     updateScene();
 }
 
+// ===== Этап 9: Звук и музыка =====
+const audioCtx = new (window.AudioContext || window.windowAudioContext)();
+
+function playSound(freq, type = 'sine', duration = 0.1, volume = 0.1) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function playGameSound(event) {
+    switch(event) {
+        case 'click': playSound(440, 'sine', 0.1); break;
+        case 'hit': playSound(150, 'square', 0.2, 0.2); break;
+        case 'defend': playSound(880, 'sine', 0.3, 0.1); break;
+        case 'gain': playSound(1200, 'sine', 0.2); break;
+        case 'error': playSound(200, 'sawtooth', 0.3); break;
+    }
+}
+
 function logMessage(message) {
     const p = document.createElement('p');
     p.innerText = `> ${message}`;
     logElement.appendChild(p);
     logElement.scrollTop = logElement.scrollHeight;
+    if (message.includes("Недостаточно")) playGameSound('error');
+    if (message.includes("успешно")) playGameSound('defend');
 }
 
 // ===== Этап 4: анимации ночи =====
@@ -314,6 +342,37 @@ function setDifficulty(level) {
     gameData.difficulty = level;
     logMessage(`Сложность установлена: ${level}`);
 }
+// ===== Этап 10: Живые стражники =====
+const NAMES = ["Альрик", "Борн", "Седрик", "Дорн", "Элвин", "Фредерик", "Гаррет", "Холт"];
+const CLASSES = {
+    Warrior: { bonus: 2, desc: "Бонус к силе" },
+    Archer: { bonus: 1, desc: "Бонус к точности" },
+    Mage: { bonus: 1.5, desc: "Бонус к магии" }
+};
+
+function generateGuards(count) {
+    const guards = [];
+    for(let i = 0; i < count; i++) {
+        guards.push({
+            name: NAMES[Math.floor(Math.random() * NAMES.length)],
+            class: Object.keys(CLASSES)[Math.floor(Math.random() * 3)],
+            level: 1,
+            xp: 0,
+            strength: 10
+        });
+    }
+    return guards;
+}
+
+// Интеграция в gameData
+gameData.guards = generateGuards(4);
+gameData.guardStrength = gameData.guards.reduce((sum, g) => sum + g.strength, 0);
+
+function updateGuardStrength() {
+    gameData.guardStrength = gameData.guards.reduce((sum, g) => sum + g.strength, 0);
+    updateUI();
+}
+
 const endScreen = document.getElementById('end-screen');
 
 async function showEnding(win) {
