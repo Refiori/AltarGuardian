@@ -73,6 +73,7 @@ function showFloatingText(text, kind, left, top) {
 function playDayEffect(type, before) {
     switch (type) {
         case 'supply':
+            sceneElement.dataset.supplyStarted = performance.now();
             playSceneEffect('fx-supply', 1700);
             showFloatingText('+20 провизии', 'supply', 24, 72);
             break;
@@ -162,7 +163,7 @@ function svgEl(name, attrs = {}) {
 }
 
 function setActionsEnabled(enabled) {
-    document.querySelectorAll('.action-btn').forEach(btn => { btn.disabled = !enabled; });
+    document.querySelectorAll('#action-panel .action-btn').forEach(btn => { btn.disabled = !enabled; });
 }
 
 // ===== Этап 5: Типы врагов и боссы =====
@@ -172,24 +173,52 @@ function getEnemyType(day) {
     if (randVal < 0.2) return 'runner'; // Быстрые
     if (randVal < 0.4) return 'armored'; // Бронированные
     if (randVal < 0.6) return 'flyer';   // Летающие
+    if (randVal < 0.8) return 'goblin';
     return 'normal';
 }
 
 function getEnemyStats(type, day) {
     const basePower = 15 + (day * 2);
     switch(type) {
+        case 'goblin': return { power: basePower, name: 'Гоблин', color: '#8baa61' };
         case 'boss': return { power: basePower * 3, name: 'БОСС ПУСТОТЫ', color: '#ff00ff', health: 500 };
         case 'runner': return { power: basePower * 0.7, name: 'Бегун', color: '#ffff00', speed: 1.5 };
         case 'armored': return { power: basePower * 1.3, name: 'Танк', color: '#888888', defense: 10 };
         case 'flyer': return { power: basePower * 0.9, name: 'Летун', color: '#00ffff', bypass: true };
-        default: return { power: basePower, name: 'Тень', color: '#ffffff' };
+        default: return { power: basePower, name: 'Одноглаз Пустоты', color: '#ffffff' };
     }
 }
 
-async function sendWave(power) {
-    if (reduceMotion) return wait(300).then(() => []);
+function planWave(day) {
+    const type = getEnemyType(day);
+    return {
+        type,
+        power: 15 + day * 2,
+        wallFactor: 1,
+        caravanSupport: 0
+    };
+}
 
-    const type = getEnemyType(gameData.day);
+function enemyShape(type) {
+    return type === 'normal' ? '#enemy-shape' : `#enemy-${type}`;
+}
+
+function getEnemyCount(power) {
+    return Math.max(2, Math.min(8, Math.round(power / 12)));
+}
+
+function puff(x, y, color, size) {
+    const particle = svgEl('circle', { cx: x, cy: y, r: size, fill: color });
+    particle.style.transformBox = 'fill-box';
+    particle.style.transformOrigin = 'center';
+    enemiesLayer.appendChild(particle);
+    particle.animate(
+        [{ transform: 'scale(1)', opacity: .85 }, { transform: 'scale(4)', opacity: 0 }],
+        { duration: 500, easing: 'ease-out', fill: 'forwards' }
+    ).onfinish = () => particle.remove();
+}
+
+async function sendWave({ type, power }) {
     const stats = getEnemyStats(type, gameData.day);
     const count = type === 'boss' ? 1 : getEnemyCount(power);
     const enemies = [];
@@ -197,24 +226,24 @@ async function sendWave(power) {
         const fromLeft = i % 2 === 0;
         const row = i >> 1;
         const x = fromLeft ? 230 + row * 28 : 570 - row * 28;
-        const y = 304 + (row % 3) * 10;
+        const y = (type === 'flyer' ? 252 : 304) + (row % 3) * 10;
 
-        const g = svgEl('g');
+        const g = svgEl('g', { 'data-enemy': type, 'data-start': performance.now() + i * 90 });
         const body = svgEl('g', { class: 'enemy-body' });
         body.setAttribute('fill', stats.color);
-        body.appendChild(svgEl('use', { href: '#enemy-shape' }));
+        body.appendChild(svgEl('use', { href: enemyShape(type) }));
         g.appendChild(body);
         enemiesLayer.appendChild(g);
 
         const speedMult = stats.speed || 1;
-        g.animate([
+        if (!reduceMotion) g.animate([
             { transform: `translate(${fromLeft ? -40 : 840}px, ${y}px)`, opacity: 0 },
             { transform: `translate(${x}px, ${y}px)`, opacity: 1 }
         ], { duration: 1300 / speedMult, delay: i * 90, easing: 'ease-out', fill: 'both' });
 
         enemies.push({ g, x, y, type, stats });
     }
-    return wait(1300 + (count - 1) * 90 + 150).then(() => enemies);
+    return wait(reduceMotion ? 300 : 1300 + (count - 1) * 90 + 150).then(() => enemies);
 }
 
 function dissolveEnemies(enemies, color) {
@@ -243,7 +272,7 @@ function flyShard(fromX, fromY, delay) {
 
 // Атака отбита: щит вспыхивает, кристалл бьёт молниями, враги рассыпаются
 async function playDefense(enemies, onDone) {
-    if (reduceMotion) { onDone(); return wait(300); }
+    if (reduceMotion) { onDone(); await wait(300); clearEnemies(enemies); return; }
 
     playSceneEffect('fx-defend', 1300);
     await wait(250);
@@ -284,7 +313,7 @@ function debris(x, y, dir) {
 
 // Оборона прорвана: удар по стенам, тряска, красная вспышка, обломки
 async function playBreach(enemies, damage, onImpact) {
-    if (reduceMotion) { onImpact(); return wait(300); }
+    if (reduceMotion) { onImpact(); await wait(300); clearEnemies(enemies); return; }
 
     playSceneEffect('fx-hit', 900);
     onImpact();
@@ -298,6 +327,154 @@ async function playBreach(enemies, damage, onImpact) {
     dissolveEnemies(enemies, '#ff4d6d');
     await wait(900);
     clearEnemies(enemies);
+}
+
+function fireCaravanBolts(enemies) {
+    enemies.forEach((enemy, i) => {
+        const bolt = svgEl('line', {
+            x1: i % 2 === 0 ? 240 : 560,
+            y1: 150,
+            x2: enemy.x,
+            y2: enemy.y - 14,
+            class: 'bolt caravan-bolt'
+        });
+        bolt.style.animationDelay = `${i * 55}ms`;
+        enemiesLayer.appendChild(bolt);
+        setTimeout(() => bolt.remove(), 450 + i * 55);
+    });
+}
+
+// Утреннее событие разыгрывается перед обычным дневным действием.
+const eventPanel = document.getElementById('morning-event');
+const eventTitle = document.getElementById('event-title');
+const eventOptions = document.getElementById('event-options');
+const morningEvents = {
+    meteor: {
+        title: 'Упавшая звезда',
+        description: 'За стеной дымится кратер. Из трещин в камне пробивается фиолетовый свет.',
+        choices: [
+            {
+                label: 'Собрать осколки',
+                detail: '+8 материи. Ночью прилетят летуны: +25 к силе волны, учитывается половина прочности стен.',
+                apply() {
+                    gameData.fragments += 8;
+                    plannedWave.type = 'flyer';
+                    plannedWave.power += 25;
+                    plannedWave.wallFactor = 0.5;
+                    sceneElement.dataset.event = 'meteor';
+                    logMessage('Вы собрали 8 материи. Свет из кратера привлекает летунов.');
+                }
+            },
+            {
+                label: 'Запечатать кратер',
+                detail: '−10 маны. Волна придёт в обычном составе.',
+                cost: { resource: 'mana', amount: 10 },
+                apply() {
+                    sceneElement.dataset.event = 'meteor-sealed';
+                    logMessage('Вы запечатали кратер за 10 маны. Свечение погасло.');
+                }
+            }
+        ]
+    },
+    caravan: {
+        title: 'Караван у ворот',
+        description: 'Торговцы с возами ищут припасы для дороги и безопасное место для ночлега.',
+        choices: [
+            {
+                label: 'Купить провизию',
+                detail: '−5 материи, +24 провизии. Караван продолжит путь.',
+                cost: { resource: 'fragments', amount: 5 },
+                apply() {
+                    gameData.supplies += 24;
+                    delete sceneElement.dataset.event;
+                    logMessage('Вы купили 24 провизии за 5 материи. Караван отправился дальше.');
+                }
+            },
+            {
+                label: 'Дать каравану ночлег',
+                detail: '+12 к обороне этой ночью. Провизия останется у торговцев.',
+                apply() {
+                    plannedWave.caravanSupport = 12;
+                    logMessage('Арбалетчики каравана помогут этой ночью. Оборона усилена на 12.');
+                }
+            }
+        ]
+    },
+    omen: {
+        title: 'Голос из алтаря',
+        description: 'Кристалл шепчет сквозь утренний звон. В его глубине проступает чья-то тень.',
+        choices: [
+            {
+                label: 'Вслушаться в кристалл',
+                detail: '−5 маны. Алтарь покажет, кто атакует ближайшей ночью.',
+                cost: { resource: 'mana', amount: 5 },
+                apply() {
+                    const type = plannedWave.type;
+                    document.getElementById('vision-enemy').setAttribute('href', enemyShape(type));
+                    sceneElement.dataset.event = 'vision';
+                    logMessage(`Алтарь показал, кто придёт ночью: ${getEnemyStats(type, gameData.day).name}.`);
+                }
+            },
+            {
+                label: 'Сберечь ману',
+                detail: 'Кристалл затихнет. Разведка сообщит силу волны.',
+                apply() {
+                    delete sceneElement.dataset.event;
+                    logMessage('Вы сберегли ману, и голос затих.');
+                }
+            }
+        ]
+    }
+};
+
+let plannedWave = planWave(gameData.day);
+let lastMorningEvent;
+
+function announceWave() {
+    logMessage(`Разведка сообщает: следующая волна будет иметь силу ${plannedWave.power}.`);
+}
+
+function triggerRandomEvent() {
+    const available = Object.keys(morningEvents).filter(type =>
+        type !== lastMorningEvent && (type !== 'meteor' || plannedWave.type !== 'boss')
+    );
+    const type = gameData.day === 2 ? 'meteor' : available[Math.floor(Math.random() * available.length)];
+    const morningEvent = morningEvents[type];
+    lastMorningEvent = type;
+    sceneElement.dataset.event = type;
+    eventTitle.textContent = morningEvent.title;
+    document.getElementById('event-description').textContent = morningEvent.description;
+
+    eventOptions.replaceChildren();
+    for (const choice of morningEvent.choices) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'action-btn event-choice';
+        const { cost } = choice;
+        button.disabled = Boolean(cost && gameData[cost.resource] < cost.amount);
+        const label = document.createElement('strong');
+        label.textContent = choice.label;
+        const detail = document.createElement('span');
+        detail.textContent = button.disabled ? `${choice.detail} Недостаточно ресурсов.` : choice.detail;
+        button.append(label, detail);
+        button.addEventListener('click', () => {
+            if (eventPanel.hidden) return;
+            if (cost) gameData[cost.resource] -= cost.amount;
+            choice.apply();
+            eventPanel.hidden = true;
+            logElement.hidden = false;
+            announceWave();
+            updateUI();
+            gameData.isBusy = false;
+            setActionsEnabled(true);
+            document.querySelector('#action-panel .action-btn').focus();
+        });
+        eventOptions.appendChild(button);
+    }
+    logMessage(`Утреннее событие: ${morningEvent.title}.`);
+    eventPanel.hidden = false;
+    logElement.hidden = true;
+    eventTitle.focus();
 }
 
 // ===== Этап 6: Приказы во время ночи =====
@@ -488,7 +665,7 @@ const game = {
         sceneElement.classList.add('is-night');
         showFloatingText('Ночь', 'night', 50, 30);
 
-        const enemyPower = 15 + (gameData.day * 2);
+        const { power: enemyPower, wallFactor, caravanSupport } = plannedWave;
         
         // Потребление провизии (1 ед. на каждые 10 ед. силы стражи)
         const foodNeeded = Math.ceil(gameData.guardStrength / 10);
@@ -514,12 +691,18 @@ const game = {
             logMessage(`Мана почти иссякла! Щит слабеет.`);
         }
 
-        const defense = gameData.wallHealth + gameData.guardStrength;
+        const defense = Math.floor(gameData.wallHealth * wallFactor) + gameData.guardStrength + caravanSupport;
+        if (wallFactor < 1) logMessage('Летуны перелетают через стены. Учитывается половина их прочности.');
+        if (caravanSupport) logMessage(`Арбалетчики каравана открыли огонь (+${caravanSupport} к обороне).`);
 
         logMessage(`Прибыла волна из Пустоты (Сила: ${enemyPower}). Ваша оборона: ${defense}`);
 
         // Враги подбегают к стенам
-        const enemies = await sendWave(enemyPower);
+        const enemies = await sendWave(plannedWave);
+        if (caravanSupport && enemies.length) {
+            fireCaravanBolts(enemies);
+            await wait(450);
+        }
 
         if (defense >= enemyPower) {
             logMessage("Вы успешно отразили атаку!");
@@ -541,6 +724,7 @@ const game = {
 
         updateUI();
         sceneElement.classList.remove('is-night');
+        delete sceneElement.dataset.event;
 
         if (!gameData.isGameOver && !gameData.victory) {
             gameData.day += 1;
@@ -548,16 +732,15 @@ const game = {
                 gameData.victory = true;
                 logMessage("Вы выстояли все 30 дней! Вы победили!");
             } else {
-                // ===== Этап 7: Случайные события =====
-                if (Math.random() < 0.3) {
-                    const eventResult = triggerRandomEvent();
-                    logMessage(`Результат: ${eventResult}`);
-                }
-                
-                const nextEnemyPower = 15 + (gameData.day * 2);
+                plannedWave = planWave(gameData.day);
                 logMessage(`--- День ${gameData.day} --- Наступил новый день.`);
-                logMessage(`Разведка сообщает: следующая волна будет иметь силу ${nextEnemyPower}.`);
                 showFloatingText(`День ${gameData.day}`, 'day', 50, 30);
+                updateUI();
+                if (gameData.day === 2 || Math.random() < 0.3) {
+                    triggerRandomEvent();
+                    return;
+                }
+                announceWave();
             }
         }
 

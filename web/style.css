@@ -343,6 +343,34 @@ footer {
 #scene.fx-gain .halo { animation: halo-burst .9s ease-out; }
 #scene.fx-gain .crystal { filter: drop-shadow(0 0 8px #c9a7ff) brightness(1.4); }
 
+/* Утренние события */
+#morning-event {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    padding: 12px;
+    border: 1px solid var(--accent-color);
+    border-radius: 4px;
+    background: #211c2e;
+}
+
+#event-title { margin: 0; color: #f1cf70; font-size: 1.15rem; }
+#event-description { margin: 6px 0 10px; }
+#event-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 8px; }
+.event-choice { text-align: left; }
+.event-choice span { display: block; margin-top: 4px; line-height: 1.35; }
+.event-choice:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
+
+.scene-event, .meteor-seal { display: none; }
+#scene:is([data-event="meteor"], [data-event="meteor-sealed"]) #meteor-crater,
+#scene[data-event="meteor-sealed"] .meteor-seal,
+#scene[data-event="caravan"] #caravan-wagon,
+#scene[data-event="vision"]:not(.is-night) #altar-vision { display: inline; }
+#scene[data-event="meteor-sealed"] .meteor-shards { display: none; }
+.meteor-shards { filter: drop-shadow(0 0 5px #cf8dff); }
+.caravan-bolt { stroke: #ffb34b; filter: drop-shadow(0 0 4px #ff8f3f); }
+
 /* Прорыв: тряска, красная вспышка, стены вздрагивают */
 #scene.fx-hit svg { animation: shake .5s linear; }
 #scene.fx-hit #hit-flash { animation: hit-flash .6s ease-out; }
@@ -474,3 +502,7 @@ body { height: 100dvh; }
     #end-screen, #day-progress-fill, #sky-day, #stars, .moon, .sun, .hill-far, .hill-near, #rays { transition: none !important; }
     .log-window p, #scene.is-victory #rays { animation: none !important; }
 }
+
+#fortress-view { display: none; }
+#scene.has-3d #fortress-view { display: block; width: 100%; height: 100%; }
+#scene.has-3d > svg { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }

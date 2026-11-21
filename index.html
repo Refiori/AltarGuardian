@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Хранитель Алтаря</title>
+<style>
+:root{color-scheme:dark;--gold:#dcb979;--ink:#251b19;--linen:#f4e3bd;font-family:Georgia,"Times New Roman",serif}
+*{box-sizing:border-box}
+body{margin:0;background:#353954;color:var(--linen)}
+[hidden],#game-log,#scene>svg,#day-progress-fill,#wall-health{display:none!important}
+#scene{position:fixed;inset:0;overflow:hidden;background:linear-gradient(#546e98,#e8bc9c 63%,#8b91a2)}
+#fortress-view{width:100%;height:100%;display:block}
+.float-fx{position:absolute;transform:translate(-50%,-50%);pointer-events:none;color:#fff4d4;text-shadow:0 2px 5px #171320;font-weight:bold;animation:float 1.5s ease-out forwards}
+@keyframes float{to{transform:translate(-50%,-150%);opacity:0}}
+.top{position:fixed;top:max(16px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);text-align:center;pointer-events:none}
+.day{white-space:nowrap;display:inline-block;background:#292534ed;color:#f5dca6;border:1px solid var(--gold);box-shadow:0 2px 12px #231c3344;padding:8px 22px;letter-spacing:.08em;font-variant:small-caps}
+#notice{position:fixed;top:max(58px,calc(env(safe-area-inset-top) + 50px));left:50%;transform:translateX(-50%);width:max-content;max-width:90vw;text-align:center;margin:0;color:#fff2ce;background:#28212cec;padding:8px 16px;border-radius:3px;font:16px/1.4 Georgia;pointer-events:none}
+#notice:empty{display:none}
+.dock{position:fixed;bottom:max(12px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:min(1020px,96vw);padding:12px 18px 15px;border:1px solid #dab87f;outline:2px solid #35241e;box-shadow:inset 0 0 0 4px #342624,inset 0 0 0 5px #856442,0 8px 32px #17101e80;background:repeating-linear-gradient(2deg,#ffffff03 0 1px,transparent 1px 5px),linear-gradient(#514035,#302421)}
+.row,.stock,.wall{display:flex;align-items:center;gap:14px}.row{justify-content:space-between;flex-wrap:wrap;margin:0 2px 10px}.stock{flex-wrap:wrap;gap:6px 18px}.stock b{color:#ffe4a7;font-variant-numeric:tabular-nums}
+meter{height:16px;width:clamp(80px,14vw,180px);appearance:none;background:#251c22;border:1px solid #b19466;border-radius:8px;overflow:hidden}
+meter::-webkit-meter-bar{border:0;background:#251c22}meter::-webkit-meter-optimum-value{background:linear-gradient(#bee0a2,#598957)}
+meter::-moz-meter-bar{background:#8ab47b}
+#action-panel,#event-options{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+/* Preserve the painted silhouette and leaf tips of the supplied artwork. */
+button {
+    --vine-x:1; --vine-y:1; --petal-hue:0deg; --flower-a:13% 23%; --flower-b:87% 77%;
+    position:relative; isolation:isolate; min-height:62px; padding:18px 17%;
+    border:0; background:transparent; color:#fff6d9; cursor:pointer;
+    font:600 1rem/1.15 Georgia,serif; text-shadow:0 1px 3px #152313,0 0 4px #1e281a;
+}
+button::before,button::after {content:""; position:absolute; inset:0; pointer-events:none}
+button::before {
+    z-index:-1; background:url("../assets/image.jpeg") 0 44.853% / 100% 213.333% no-repeat;
+    clip-path:polygon(2.7% 48.3%,7.0% 48.3%,7.0% 49.2%,8.6% 50.0%,10.9% 55.0%,10.9% 51.7%,9.8% 49.2%,9.8% 47.5%,8.6% 44.2%,8.2% 39.2%,7.8% 39.2%,8.2% 33.3%,9.8% 30.0%,10.9% 22.5%,13.3% 17.5%,14.5% 17.5%,14.5% 16.7%,18.0% 16.7%,18.0% 17.5%,20.3% 18.3%,20.7% 20.0%,28.1% 19.2%,25.8% 12.5%,25.8% 10.0%,25.4% 10.0%,25.4% 5.0%,25.8% 4.2%,27.0% 5.0%,27.0% 5.8%,30.5% 7.5%,31.6% 10.0%,32.4% 10.0%,33.6% 12.5%,34.8% 19.2%,37.9% 19.2%,37.9% 20.0%,38.3% 19.2%,39.1% 19.2%,39.1% 20.0%,39.5% 19.2%,43.8% 19.2%,43.8% 18.3%,45.3% 18.3%,45.3% 17.5%,47.7% 16.7%,47.7% 15.8%,55.5% 15.0%,55.5% 15.8%,57.4% 15.8%,57.4% 16.7%,59.8% 17.5%,59.8% 18.3%,60.5% 18.3%,61.3% 20.0%,62.9% 20.0%,62.9% 20.8%,68.8% 20.8%,68.8% 20.0%,69.5% 20.0%,71.1% 17.5%,72.7% 17.5%,72.7% 16.7%,74.2% 16.7%,74.2% 15.8%,80.5% 18.3%,80.5% 14.2%,80.9% 14.2%,80.9% 12.5%,81.6% 11.7%,81.6% 10.0%,82.4% 8.3%,83.2% 8.3%,83.2% 7.5%,84.0% 7.5%,85.5% 5.0%,86.7% 5.0%,88.7% 1.7%,89.8% 1.7%,89.5% 13.3%,89.1% 13.3%,88.7% 16.7%,87.9% 17.5%,87.9% 19.2%,87.1% 20.0%,87.1% 21.7%,91.0% 23.3%,92.6% 25.8%,93.0% 30.0%,93.4% 30.0%,93.4% 33.3%,93.0% 33.3%,93.0% 37.5%,92.2% 39.2%,92.2% 41.7%,91.8% 41.7%,91.8% 49.2%,92.2% 49.2%,92.2% 53.3%,92.6% 53.3%,92.6% 59.2%,93.4% 60.0%,93.4% 59.2%,95.7% 58.3%,95.7% 57.5%,97.7% 57.5%,98.0% 59.2%,97.7% 59.2%,97.3% 62.5%,96.5% 63.3%,96.5% 65.0%,94.1% 70.0%,93.0% 70.8%,93.0% 75.8%,92.6% 75.8%,92.6% 79.2%,92.2% 79.2%,91.4% 84.2%,90.6% 85.8%,89.8% 85.8%,89.5% 87.5%,88.3% 87.5%,87.9% 89.2%,86.7% 89.2%,86.7% 90.0%,81.2% 90.0%,81.2% 89.2%,79.7% 89.2%,79.7% 88.3%,77.0% 87.5%,77.0% 86.7%,68.0% 86.7%,67.6% 85.8%,66.8% 87.5%,68.4% 90.0%,68.4% 91.7%,69.1% 93.3%,69.1% 95.8%,69.5% 95.8%,69.1% 97.5%,64.1% 96.7%,64.1% 95.8%,61.7% 95.0%,60.5% 92.5%,60.5% 90.8%,59.8% 90.0%,59.4% 86.7%,52.3% 87.5%,52.3% 88.3%,48.4% 89.2%,48.4% 90.0%,38.3% 90.0%,38.3% 89.2%,33.2% 87.5%,33.2% 86.7%,31.2% 86.7%,31.2% 85.8%,28.9% 85.8%,28.9% 85.0%,26.6% 85.0%,26.6% 85.8%,23.4% 86.7%,23.4% 87.5%,22.3% 87.5%,22.3% 88.3%,20.3% 88.3%,20.3% 89.2%,19.1% 89.2%,19.1% 90.0%,16.4% 90.0%,16.4% 89.2%,14.5% 88.3%,14.1% 86.7%,13.3% 86.7%,13.7% 88.3%,12.1% 88.3%,11.7% 86.7%,10.9% 86.7%,10.2% 85.0%,10.2% 83.3%,9.4% 81.7%,9.4% 76.7%,9.0% 76.7%,9.4% 75.8%,9.4% 70.8%,8.6% 70.8%,7.4% 73.3%,5.9% 73.3%,5.9% 74.2%,3.5% 74.2%,3.1% 73.3%,5.9% 58.3%,3.9% 55.0%,3.9% 53.3%,2.7% 50.8%);
+    transform:scale(var(--vine-x),var(--vine-y));
+}
+button::after {
+    background:url("blossom.svg") var(--flower-a) / 16px 16px no-repeat,
+               url("blossom.svg") var(--flower-b) / 12px 12px no-repeat;
+    filter:hue-rotate(var(--petal-hue)) drop-shadow(1px 2px 1px #1d211aa8);
+}
+button:nth-child(2) {--vine-x:-1;--petal-hue:90deg;--flower-a:83% 27%;--flower-b:9% 65%}
+button:nth-child(3) {--vine-y:-1;--petal-hue:245deg;--flower-a:25% 78%;--flower-b:92% 22%}
+button:nth-child(4) {--vine-x:-1;--vine-y:-1;--petal-hue:320deg;--flower-a:8% 30%;--flower-b:74% 81%}
+#restart-btn {--vine-x:-1;--petal-hue:165deg;--flower-a:87% 24%;--flower-b:19% 78%;min-width:190px}
+button:hover:enabled::before {filter:brightness(1.14)}
+button:active:enabled {transform:translateY(1px)}
+button:focus-visible {outline:3px solid #f6d590;outline-offset:2px;border-radius:12px}
+button:disabled {filter:saturate(.55);opacity:.72;cursor:default}
+dialog,#end-screen.visible{color:#362623;background:radial-gradient(ellipse at top,#fff1ce,#e2c598 80%);border:3px double #886338;box-shadow:0 16px 80px #120e1ea8,inset 0 0 28px #a6763933;padding:clamp(20px,4vw,38px);border-radius:6px;width:min(510px,92vw);max-height:86dvh;overflow:auto}
+dialog::backdrop{background:#16152299;backdrop-filter:blur(3px)}
+h2{font-weight:normal;font-size:clamp(25px,4vw,34px);margin:0 0 12px;color:#613f2d}dialog p{line-height:1.5;margin:0 0 20px}
+#event-options{grid-template-columns:1fr}#event-options button{text-align:left;padding:26px 17% 23px}#event-options button:first-child{--vine-y:-1;--petal-hue:275deg;--flower-a:8% 40%;--flower-b:72% 82%}#event-options span{display:block;margin-top:4px;font:14px/1.4 system-ui}
+#end-screen{display:none}#end-screen.visible{display:block;position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);text-align:center}#end-stats{display:flex;gap:16px;justify-content:center;margin:18px 0}#end-stats span{display:block;font-weight:bold}
+@media(max-width:640px){.dock{padding:10px 12px}.row{gap:7px}.stock{font-size:14px;gap:4px 12px}.wall{font-size:14px}#action-panel{grid-template-columns:1fr 1fr;gap:6px}button{min-height:52px;padding:15px 13%;font-size:.87rem}.top{top:10px}}
+@media(max-height:520px){.dock{bottom:4px;padding:7px 12px}.row{margin-bottom:5px}.top{left:12px;transform:none;top:8px}#action-panel{grid-template-columns:repeat(4,1fr)}}
+@media(prefers-reduced-motion:reduce){.float-fx{display:none}}
+</style>
+</head>
+<body>
+<div id="scene" role="img" aria-label="Остров с алтарём и крепостью"><canvas id="fortress-view"></canvas><svg aria-hidden="true"><g id="enemies"></g><use id="vision-enemy"></use></svg></div>
+<header class="top"><div class="day"><span id="phase">День</span> <b id="day-count">1</b></div></header>
+<p id="notice" role="status"></p>
+<main class="dock" aria-label="Управление крепостью">
+<div class="row"><div class="wall"><label for="wall-meter">Прочность стен</label><meter id="wall-meter" min="0" max="100" value="100"></meter></div>
+<div class="stock"><span>Мана <b id="mana-count"></b></span><span>Провизия <b id="supplies-count"></b></span><span>Материя <b id="fragments-count"></b></span><span>Стража <b id="guard-strength"></b></span></div></div>
+<div id="action-panel">
+<button class="action-btn" onclick="game.handleAction('supply')">Сбор провизии</button><button class="action-btn" onclick="game.handleAction('fortify')">Укрепить стены</button><button class="action-btn" onclick="game.handleAction('train')">Обучить стражу</button><button class="action-btn" onclick="game.handleAction('rest')">Отдых</button>
+</div></main>
+<dialog id="event-dialog" aria-labelledby="event-title" aria-describedby="event-description"><section id="morning-event" hidden><h2 id="event-title" tabindex="-1"></h2><p id="event-description"></p><div id="event-options"></div></section></dialog>
+<div id="end-screen" role="dialog" aria-hidden="true"><h2 id="end-title"></h2><p id="end-text"></p><div id="end-stats"></div><button id="restart-btn" onclick="location.reload()">Играть снова</button></div>
+<div id="game-log" hidden></div><span id="wall-health" hidden></span><span id="day-progress-fill" hidden></span>
+<script src="game.js"></script><script src="fortress.js"></script>
+<script>
+(() => {
+    const byId = id => document.getElementById(id);
+    const dialog = byId('event-dialog');
+    const panel = byId('morning-event');
+    const meter = byId('wall-meter');
+    const notice = byId('notice');
+    if (typeof gameData === 'undefined' || !byId('scene').classList.contains('has-3d')) {
+        notice.textContent = 'Не удалось загрузить игру. Проверьте, что game.js и fortress.js лежат рядом с index.html.';
+        return;
+    }
+    function syncWall() {
+        meter.max = gameData.maxWallHealth;
+        meter.value = Math.max(0, gameData.wallHealth);
+        meter.setAttribute('aria-valuetext', meter.value + ' из ' + meter.max);
+    }
+    syncWall();
+    new MutationObserver(syncWall).observe(byId('wall-health'), {childList:true,subtree:true,characterData:true});
+    new MutationObserver(() => {
+        byId('phase').textContent = byId('scene').classList.contains('is-night') ? 'Ночь' : 'День';
+    }).observe(byId('scene'), {attributes:true,attributeFilter:['class']});
+    new MutationObserver(() => {
+        if (!panel.hidden && !dialog.open) {
+            notice.textContent = '';
+            dialog.showModal();
+            byId('event-title').focus();
+        } else if (panel.hidden && dialog.open) {
+            dialog.close();
+            document.querySelector('#action-panel button').focus();
+        }
+    }).observe(panel, {attributes:true,attributeFilter:['hidden']});
+    dialog.addEventListener('cancel', e => e.preventDefault());
+    let timer;
+    new MutationObserver(records => {
+        const messages = records.flatMap(record => [...record.addedNodes]).map(node => node.textContent.replace(/^>\s*/, ''));
+        const message = messages.find(msg => /Недостаточно|Стены повреждены|Алтарь показал|Вы успешно|голодают/i.test(msg));
+        if (!message || !panel.hidden) return;
+        notice.textContent = message;
+        clearTimeout(timer);
+        timer = setTimeout(() => { notice.textContent = ''; }, 3500);
+    }).observe(byId('game-log'), {childList:true});
+})();
+</script>
+</body></html>

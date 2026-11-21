@@ -1,0 +1,758 @@
+const gameData = {
+    day: 1,
+    maxDays: 30,
+    mana: 100,
+    supplies: 50,
+    fragments: 0,
+    wallHealth: 100,
+    maxWallHealth: 100,
+    guardStrength: 40,
+    isGameOver: false,
+    isBusy: false,
+    victory: false,
+    actionCounts: {}, 
+    upgrades: {
+        wallLevel: 1,
+        turrets: 0,
+        manaRegen: 1
+    },
+    activeSpells: {
+        shieldBoost: false,
+        guardCall: false
+    },
+    difficulty: 'normal',
+    bestDay: 0
+};
+
+const logElement = document.getElementById('game-log');
+const sceneElement = document.getElementById('scene');
+const guardSlots = document.querySelectorAll('.guard-slot');
+
+// Уровень повреждения стен для картинки: 0 - целые, 3 - почти разрушены
+function getWallDamageLevel(health) {
+    if (health > 75) return 0;
+    if (health > 50) return 1;
+    if (health > 25) return 2;
+    return 3;
+}
+
+// Сцена повторяет состояние игры: трещины по здоровью стен, стражники по силе
+function updateScene() {
+    sceneElement.dataset.damage = getWallDamageLevel(gameData.wallHealth);
+
+    const guardCount = Math.min(guardSlots.length, 4 + Math.floor(gameData.guardStrength / 10));
+    guardSlots.forEach((slot, i) => {
+        slot.classList.toggle('hidden', i >= guardCount);
+    });
+}
+
+// ===== Этап 3: анимации дневных действий =====
+const fxTimers = {};
+
+// Включает CSS-эффект на сцене (класс fx-*) и снимает его через time мс.
+// Повторное нажатие перезапускает анимацию с начала.
+function playSceneEffect(cls, time) {
+    clearTimeout(fxTimers[cls]);
+    sceneElement.classList.remove(cls);
+    void sceneElement.getBoundingClientRect(); // заставляем браузер "забыть" прошлую анимацию
+    sceneElement.classList.add(cls);
+    fxTimers[cls] = setTimeout(() => sceneElement.classList.remove(cls), time);
+}
+
+// Всплывающая надпись над сценой (left/top в процентах)
+function showFloatingText(text, kind, left, top) {
+    const el = document.createElement('div');
+    el.className = `float-fx float-${kind}`;
+    el.textContent = text;
+    el.style.left = left + '%';
+    el.style.top = top + '%';
+    el.addEventListener('animationend', () => el.remove());
+    sceneElement.appendChild(el);
+}
+
+function playDayEffect(type, before) {
+    switch (type) {
+        case 'supply':
+            sceneElement.dataset.supplyStarted = performance.now();
+            playSceneEffect('fx-supply', 1700);
+            showFloatingText('+20 провизии', 'supply', 24, 72);
+            break;
+        case 'fortify': {
+            const gain = gameData.wallHealth - before.wall;
+            playSceneEffect('fx-fortify', 1500);
+            showFloatingText(gain > 0 ? `+${gain} стенам` : 'Стены целы', 'fortify', 50, 48);
+            break;
+        }
+        case 'train':
+            playSceneEffect('fx-train', 1700);
+            showFloatingText('+10 силы стражи', 'train', 50, 66);
+            break;
+        case 'rest': {
+            const gain = gameData.mana - before.mana;
+            playSceneEffect('fx-rest', 1700);
+            showFloatingText(gain > 0 ? `+${gain} маны` : 'Мана полна', 'rest', 50, 38);
+            break;
+        }
+    }
+}
+
+function updateUI() {
+    document.getElementById('day-count').innerText = Math.min(gameData.day, gameData.maxDays);
+    const daysDone = Math.min(gameData.day, gameData.maxDays + 1) - 1;
+    document.getElementById('day-progress-fill').style.width = (daysDone / gameData.maxDays * 100) + '%';
+    document.getElementById('mana-count').innerText = gameData.mana;
+    document.getElementById('supplies-count').innerText = gameData.supplies;
+    document.getElementById('fragments-count').innerText = gameData.fragments;
+    document.getElementById('wall-health').innerText = `${gameData.wallHealth}/${gameData.maxWallHealth}`;
+    document.getElementById('guard-strength').innerText = gameData.guardStrength;
+
+    if (gameData.wallHealth <= 0) {
+        document.getElementById('wall-health').innerText = 0;
+    }
+
+    updateScene();
+}
+
+// ===== Этап 9: Звук и музыка =====
+const audioCtx = new (window.AudioContext || window.windowAudioContext)();
+
+function playSound(freq, type = 'sine', duration = 0.1, volume = 0.1) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function playGameSound(event) {
+    switch(event) {
+        case 'click': playSound(440, 'sine', 0.1); break;
+        case 'hit': playSound(150, 'square', 0.2, 0.2); break;
+        case 'defend': playSound(880, 'sine', 0.3, 0.1); break;
+        case 'gain': playSound(1200, 'sine', 0.2); break;
+        case 'error': playSound(200, 'sawtooth', 0.3); break;
+    }
+}
+
+function logMessage(message) {
+    const p = document.createElement('p');
+    p.innerText = `> ${message}`;
+    logElement.appendChild(p);
+    logElement.scrollTop = logElement.scrollHeight;
+    if (message.includes("Недостаточно")) playGameSound('error');
+    if (message.includes("успешно")) playGameSound('defend');
+}
+
+// ===== Этап 4: анимации ночи =====
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const enemiesLayer = document.getElementById('enemies');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const rand = (min, max) => min + Math.random() * (max - min);
+
+function svgEl(name, attrs = {}) {
+    const el = document.createElementNS(SVG_NS, name);
+    for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+    return el;
+}
+
+function setActionsEnabled(enabled) {
+    document.querySelectorAll('#action-panel .action-btn').forEach(btn => { btn.disabled = !enabled; });
+}
+
+// ===== Этап 5: Типы врагов и боссы =====
+function getEnemyType(day) {
+    if (day % 10 === 0) return 'boss';
+    const randVal = Math.random();
+    if (randVal < 0.2) return 'runner'; // Быстрые
+    if (randVal < 0.4) return 'armored'; // Бронированные
+    if (randVal < 0.6) return 'flyer';   // Летающие
+    if (randVal < 0.8) return 'goblin';
+    return 'normal';
+}
+
+function getEnemyStats(type, day) {
+    const basePower = 15 + (day * 2);
+    switch(type) {
+        case 'goblin': return { power: basePower, name: 'Гоблин', color: '#8baa61' };
+        case 'boss': return { power: basePower * 3, name: 'БОСС ПУСТОТЫ', color: '#ff00ff', health: 500 };
+        case 'runner': return { power: basePower * 0.7, name: 'Бегун', color: '#ffff00', speed: 1.5 };
+        case 'armored': return { power: basePower * 1.3, name: 'Танк', color: '#888888', defense: 10 };
+        case 'flyer': return { power: basePower * 0.9, name: 'Летун', color: '#00ffff', bypass: true };
+        default: return { power: basePower, name: 'Одноглаз Пустоты', color: '#ffffff' };
+    }
+}
+
+function planWave(day) {
+    const type = getEnemyType(day);
+    return {
+        type,
+        power: 15 + day * 2,
+        wallFactor: 1,
+        caravanSupport: 0
+    };
+}
+
+function enemyShape(type) {
+    return type === 'normal' ? '#enemy-shape' : `#enemy-${type}`;
+}
+
+function getEnemyCount(power) {
+    return Math.max(2, Math.min(8, Math.round(power / 12)));
+}
+
+function puff(x, y, color, size) {
+    const particle = svgEl('circle', { cx: x, cy: y, r: size, fill: color });
+    particle.style.transformBox = 'fill-box';
+    particle.style.transformOrigin = 'center';
+    enemiesLayer.appendChild(particle);
+    particle.animate(
+        [{ transform: 'scale(1)', opacity: .85 }, { transform: 'scale(4)', opacity: 0 }],
+        { duration: 500, easing: 'ease-out', fill: 'forwards' }
+    ).onfinish = () => particle.remove();
+}
+
+async function sendWave({ type, power }) {
+    const stats = getEnemyStats(type, gameData.day);
+    const count = type === 'boss' ? 1 : getEnemyCount(power);
+    const enemies = [];
+    for (let i = 0; i < count; i++) {
+        const fromLeft = i % 2 === 0;
+        const row = i >> 1;
+        const x = fromLeft ? 230 + row * 28 : 570 - row * 28;
+        const y = (type === 'flyer' ? 252 : 304) + (row % 3) * 10;
+
+        const g = svgEl('g', { 'data-enemy': type, 'data-start': performance.now() + i * 90 });
+        const body = svgEl('g', { class: 'enemy-body' });
+        body.setAttribute('fill', stats.color);
+        body.appendChild(svgEl('use', { href: enemyShape(type) }));
+        g.appendChild(body);
+        enemiesLayer.appendChild(g);
+
+        const speedMult = stats.speed || 1;
+        if (!reduceMotion) g.animate([
+            { transform: `translate(${fromLeft ? -40 : 840}px, ${y}px)`, opacity: 0 },
+            { transform: `translate(${x}px, ${y}px)`, opacity: 1 }
+        ], { duration: 1300 / speedMult, delay: i * 90, easing: 'ease-out', fill: 'both' });
+
+        enemies.push({ g, x, y, type, stats });
+    }
+    return wait(reduceMotion ? 300 : 1300 + (count - 1) * 90 + 150).then(() => enemies);
+}
+
+function dissolveEnemies(enemies, color) {
+    enemies.forEach(e => {
+        e.g.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 350, fill: 'forwards' });
+        puff(e.x, e.y - 12, color, 5);
+    });
+}
+
+function clearEnemies(enemies) {
+    enemies.forEach(e => e.g.remove());
+}
+
+// Осколок материи летит к алтарю
+function flyShard(fromX, fromY, delay) {
+    const s = svgEl('polygon', {
+        points: '0,-5 3.5,0 0,5 -3.5,0', fill: '#b88bff', stroke: '#efe3ff', 'stroke-width': .8
+    });
+    enemiesLayer.appendChild(s);
+    s.animate([
+        { transform: `translate(${fromX}px, ${fromY}px)`, opacity: 0 },
+        { transform: `translate(${fromX}px, ${fromY - 14}px)`, opacity: 1, offset: .25 },
+        { transform: 'translate(400px, 214px)', opacity: 0 }
+    ], { duration: 900, delay, easing: 'ease-in', fill: 'both' }).onfinish = () => s.remove();
+}
+
+// Атака отбита: щит вспыхивает, кристалл бьёт молниями, враги рассыпаются
+async function playDefense(enemies, onDone) {
+    if (reduceMotion) { onDone(); await wait(300); clearEnemies(enemies); return; }
+
+    playSceneEffect('fx-defend', 1300);
+    await wait(250);
+
+    enemies.forEach((e, i) => {
+        const bolt = svgEl('line', { x1: 400, y1: 200, x2: e.x, y2: e.y - 14, class: 'bolt' });
+        bolt.style.animationDelay = `${i * 60}ms`;
+        enemiesLayer.appendChild(bolt);
+        setTimeout(() => bolt.remove(), 700 + i * 60);
+    });
+    await wait(300 + enemies.length * 60);
+
+    dissolveEnemies(enemies, '#8a4dff');
+    for (let i = 0; i < 5; i++) {
+        const e = enemies[i % enemies.length];
+        flyShard(e.x, e.y - 8, 350 + i * 80);
+    }
+
+    await wait(1250);
+    playSceneEffect('fx-gain', 900);
+    showFloatingText('+5 материи', 'fragments', 50, 40);
+    onDone();
+    await wait(900);
+    clearEnemies(enemies);
+}
+
+// Обломки стены
+function debris(x, y, dir) {
+    const d = svgEl('rect', { x: -2, y: -2, width: rand(3, 5), height: rand(3, 5), fill: '#7a768a' });
+    enemiesLayer.appendChild(d);
+    const dx = dir * rand(10, 34);
+    d.animate([
+        { transform: `translate(${x}px, ${y}px)`, opacity: 1 },
+        { transform: `translate(${x + dx}px, ${y - rand(15, 35)}px)`, opacity: 1, offset: .4 },
+        { transform: `translate(${x + dx * 1.6}px, ${y + rand(15, 30)}px)`, opacity: 0 }
+    ], { duration: 750, easing: 'ease-in', fill: 'forwards' }).onfinish = () => d.remove();
+}
+
+// Оборона прорвана: удар по стенам, тряска, красная вспышка, обломки
+async function playBreach(enemies, damage, onImpact) {
+    if (reduceMotion) { onImpact(); await wait(300); clearEnemies(enemies); return; }
+
+    playSceneEffect('fx-hit', 900);
+    onImpact();
+    showFloatingText(`-${damage} стенам`, 'damage', 50, 52);
+    enemies.forEach(e => {
+        const dir = e.x < 400 ? -1 : 1;
+        for (let i = 0; i < 4; i++) debris(e.x, 288, dir);
+    });
+
+    await wait(450);
+    dissolveEnemies(enemies, '#ff4d6d');
+    await wait(900);
+    clearEnemies(enemies);
+}
+
+function fireCaravanBolts(enemies) {
+    enemies.forEach((enemy, i) => {
+        const bolt = svgEl('line', {
+            x1: i % 2 === 0 ? 240 : 560,
+            y1: 150,
+            x2: enemy.x,
+            y2: enemy.y - 14,
+            class: 'bolt caravan-bolt'
+        });
+        bolt.style.animationDelay = `${i * 55}ms`;
+        enemiesLayer.appendChild(bolt);
+        setTimeout(() => bolt.remove(), 450 + i * 55);
+    });
+}
+
+// Утреннее событие разыгрывается перед обычным дневным действием.
+const eventPanel = document.getElementById('morning-event');
+const eventTitle = document.getElementById('event-title');
+const eventOptions = document.getElementById('event-options');
+const morningEvents = {
+    meteor: {
+        title: 'Упавшая звезда',
+        description: 'За стеной дымится кратер. Из трещин в камне пробивается фиолетовый свет.',
+        choices: [
+            {
+                label: 'Собрать осколки',
+                detail: '+8 материи. Ночью прилетят летуны: +25 к силе волны, учитывается половина прочности стен.',
+                apply() {
+                    gameData.fragments += 8;
+                    plannedWave.type = 'flyer';
+                    plannedWave.power += 25;
+                    plannedWave.wallFactor = 0.5;
+                    sceneElement.dataset.event = 'meteor';
+                    logMessage('Вы собрали 8 материи. Свет из кратера привлекает летунов.');
+                }
+            },
+            {
+                label: 'Запечатать кратер',
+                detail: '−10 маны. Волна придёт в обычном составе.',
+                cost: { resource: 'mana', amount: 10 },
+                apply() {
+                    sceneElement.dataset.event = 'meteor-sealed';
+                    logMessage('Вы запечатали кратер за 10 маны. Свечение погасло.');
+                }
+            }
+        ]
+    },
+    caravan: {
+        title: 'Караван у ворот',
+        description: 'Торговцы с возами ищут припасы для дороги и безопасное место для ночлега.',
+        choices: [
+            {
+                label: 'Купить провизию',
+                detail: '−5 материи, +24 провизии. Караван продолжит путь.',
+                cost: { resource: 'fragments', amount: 5 },
+                apply() {
+                    gameData.supplies += 24;
+                    delete sceneElement.dataset.event;
+                    logMessage('Вы купили 24 провизии за 5 материи. Караван отправился дальше.');
+                }
+            },
+            {
+                label: 'Дать каравану ночлег',
+                detail: '+12 к обороне этой ночью. Провизия останется у торговцев.',
+                apply() {
+                    plannedWave.caravanSupport = 12;
+                    logMessage('Арбалетчики каравана помогут этой ночью. Оборона усилена на 12.');
+                }
+            }
+        ]
+    },
+    omen: {
+        title: 'Голос из алтаря',
+        description: 'Кристалл шепчет сквозь утренний звон. В его глубине проступает чья-то тень.',
+        choices: [
+            {
+                label: 'Вслушаться в кристалл',
+                detail: '−5 маны. Алтарь покажет, кто атакует ближайшей ночью.',
+                cost: { resource: 'mana', amount: 5 },
+                apply() {
+                    const type = plannedWave.type;
+                    document.getElementById('vision-enemy').setAttribute('href', enemyShape(type));
+                    sceneElement.dataset.event = 'vision';
+                    logMessage(`Алтарь показал, кто придёт ночью: ${getEnemyStats(type, gameData.day).name}.`);
+                }
+            },
+            {
+                label: 'Сберечь ману',
+                detail: 'Кристалл затихнет. Разведка сообщит силу волны.',
+                apply() {
+                    delete sceneElement.dataset.event;
+                    logMessage('Вы сберегли ману, и голос затих.');
+                }
+            }
+        ]
+    }
+};
+
+let plannedWave = planWave(gameData.day);
+let lastMorningEvent;
+
+function announceWave() {
+    logMessage(`Разведка сообщает: следующая волна будет иметь силу ${plannedWave.power}.`);
+}
+
+function triggerRandomEvent() {
+    const available = Object.keys(morningEvents).filter(type =>
+        type !== lastMorningEvent && (type !== 'meteor' || plannedWave.type !== 'boss')
+    );
+    const type = gameData.day === 2 ? 'meteor' : available[Math.floor(Math.random() * available.length)];
+    const morningEvent = morningEvents[type];
+    lastMorningEvent = type;
+    sceneElement.dataset.event = type;
+    eventTitle.textContent = morningEvent.title;
+    document.getElementById('event-description').textContent = morningEvent.description;
+
+    eventOptions.replaceChildren();
+    for (const choice of morningEvent.choices) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'action-btn event-choice';
+        const { cost } = choice;
+        button.disabled = Boolean(cost && gameData[cost.resource] < cost.amount);
+        const label = document.createElement('strong');
+        label.textContent = choice.label;
+        const detail = document.createElement('span');
+        detail.textContent = button.disabled ? `${choice.detail} Недостаточно ресурсов.` : choice.detail;
+        button.append(label, detail);
+        button.addEventListener('click', () => {
+            if (eventPanel.hidden) return;
+            if (cost) gameData[cost.resource] -= cost.amount;
+            choice.apply();
+            eventPanel.hidden = true;
+            logElement.hidden = false;
+            announceWave();
+            updateUI();
+            gameData.isBusy = false;
+            setActionsEnabled(true);
+            document.querySelector('#action-panel .action-btn').focus();
+        });
+        eventOptions.appendChild(button);
+    }
+    logMessage(`Утреннее событие: ${morningEvent.title}.`);
+    eventPanel.hidden = false;
+    logElement.hidden = true;
+    eventTitle.focus();
+}
+
+// ===== Этап 6: Приказы во время ночи =====
+async function handleNightOrder(orderType) {
+    if (gameData.isBusy || gameData.isGameOver) return;
+
+    const orders = {
+        shield: { cost: 20, msg: "Щит усилен! Урон по стенам снижен." },
+        guards: { cost: 15, msg: "Призыв подкрепления! Сила стражи временно выросла." },
+        attack: { cost: 25, msg: "Фокусированная атака! Враги уничтожаются быстрее." }
+    };
+
+    const order = orders[orderType];
+    if (gameData.mana < order.cost) {
+        logMessage("Недостаточно маны для приказа!");
+        return;
+    }
+
+    gameData.mana -= order.cost;
+    logMessage(`Приказ: ${order.msg} (-${order.cost} маны)`);
+    updateUI();
+    
+    if (orderType === 'shield') gameData.activeSpells.shieldBoost = true;
+    if (orderType === 'guards') gameData.activeSpells.guardCall = true;
+}
+
+// ===== Этап 8: Сохранения и сложность =====
+function saveGame() {
+    localStorage.setItem('altarGuardianSave', JSON.stringify(gameData));
+}
+
+function loadGame() {
+    const saved = localStorage.getItem('altarGuardianSave');
+    if (saved) {
+        const data = JSON.parse(saved);
+        Object.assign(gameData, data);
+        logMessage("Прогресс загружен из сохранения.");
+    }
+}
+
+function setDifficulty(level) {
+    gameData.difficulty = level;
+    logMessage(`Сложность установлена: ${level}`);
+}
+// ===== Этап 10: Живые стражники =====
+const NAMES = ["Альрик", "Борн", "Седрик", "Дорн", "Элвин", "Фредерик", "Гаррет", "Холт"];
+const CLASSES = {
+    Warrior: { bonus: 2, desc: "Бонус к силе" },
+    Archer: { bonus: 1, desc: "Бонус к точности" },
+    Mage: { bonus: 1.5, desc: "Бонус к магии" }
+};
+
+function generateGuards(count) {
+    const guards = [];
+    for(let i = 0; i < count; i++) {
+        guards.push({
+            name: NAMES[Math.floor(Math.random() * NAMES.length)],
+            class: Object.keys(CLASSES)[Math.floor(Math.random() * 3)],
+            level: 1,
+            xp: 0,
+            strength: 10
+        });
+    }
+    return guards;
+}
+
+// Интеграция в gameData
+gameData.guards = generateGuards(4);
+gameData.guardStrength = gameData.guards.reduce((sum, g) => sum + g.strength, 0);
+
+function updateGuardStrength() {
+    gameData.guardStrength = gameData.guards.reduce((sum, g) => sum + g.strength, 0);
+    updateUI();
+}
+
+const endScreen = document.getElementById('end-screen');
+
+async function showEnding(win) {
+    // Сцена: победа - рассвет и лучи, поражение - разрушенный алтарь
+    sceneElement.classList.add(win ? 'is-victory' : 'is-defeat');
+    showFloatingText(win ? 'Победа!' : 'Алтарь пал', win ? 'day' : 'damage', 50, 30);
+    await wait(reduceMotion ? 300 : 2200);
+
+    const daysHeld = win ? gameData.maxDays : Math.max(0, gameData.day - 1);
+    document.getElementById('end-title').innerText = win ? 'Победа!' : 'Алтарь пал';
+    document.getElementById('end-text').innerText = win
+        ? `Вы выстояли все ${gameData.maxDays} дней, и рассвет прогнал тьму Пустоты.`
+        : 'Волна из Пустоты прорвала оборону и разрушила алтарь.';
+    document.getElementById('end-stats').innerHTML = [
+        ['Дней обороны', `${daysHeld} / ${gameData.maxDays}`],
+        ['Материя', gameData.fragments],
+        ['Сила стражи', gameData.guardStrength]
+    ].map(([label, value]) => `<div class="stat"><span>${value}</span>${label}</div>`).join('');
+
+    endScreen.classList.toggle('defeat', !win);
+    endScreen.classList.add('visible');
+    endScreen.setAttribute('aria-hidden', 'false');
+}
+
+const game = {
+    handleAction(type) {
+        if (gameData.isGameOver || gameData.victory || gameData.isBusy) return;
+
+        // ===== Этап 2: Баланс и стоимость действий =====
+        const actionCosts = {
+            supply: { mana: 5, supplies: 0, fragments: 0 },
+            fortify: { mana: 15, supplies: 0, fragments: 0 },
+            train: { mana: 10, supplies: 5, fragments: 0 },
+            rest: { mana: 0, supplies: 10, fragments: 0 },
+            upgradeWall: { mana: 0, supplies: 0, fragments: 10 },
+            buildTurret: { mana: 0, supplies: 0, fragments: 25 }
+        };
+
+        const cost = actionCosts[type] || { mana: 0, supplies: 0, fragments: 0 };
+        if (gameData.mana < (cost.mana || 0) || 
+            gameData.supplies < (cost.supplies || 0) || 
+            gameData.fragments < (cost.fragments || 0)) {
+            logMessage("Недостаточно ресурсов для этого действия!");
+            return;
+        }
+
+        // Списание стоимости
+        gameData.mana -= (cost.mana || 0);
+        gameData.supplies -= (cost.supplies || 0);
+        gameData.fragments -= (cost.fragments || 0);
+
+        // Эффект убывания (Diminishing Returns) - только для базовых действий
+        let multiplier = 1;
+        if (['supply', 'fortify', 'train', 'rest'].includes(type)) {
+            gameData.actionCounts[type] = (gameData.actionCounts[type] || 0) + 1;
+            multiplier = Math.max(0.3, 1 - (gameData.actionCounts[type] - 1) * 0.2);
+        }
+
+        // Пока идут день и ночь, новые действия недоступны
+        gameData.isBusy = true;
+        setActionsEnabled(false);
+
+        let actionMessage = "";
+        const before = { wall: gameData.wallHealth, mana: gameData.mana };
+
+        switch(type) {
+            case 'supply':
+                const sGain = Math.floor(20 * multiplier);
+                gameData.supplies += sGain;
+                actionMessage = `Вы собрали припасы (+${sGain} Supplies). Эффективность: ${Math.round(multiplier * 100)}%`;
+                break;
+            case 'fortify':
+                const fGain = Math.floor(20 * multiplier);
+                gameData.wallHealth = Math.min(gameData.maxWallHealth, gameData.wallHealth + fGain);
+                actionMessage = `Вы укрепили стены (+${fGain} Wall Health). Эффективность: ${Math.round(multiplier * 100)}%`;
+                break;
+            case 'train':
+                const tGain = Math.floor(10 * multiplier);
+                gameData.guardStrength += tGain;
+                actionMessage = `Стражники стали опытнее (+${tGain} Guard Strength). Эффективность: ${Math.round(multiplier * 100)}%`;
+                break;
+            case 'rest':
+                const rGain = Math.floor(30 * multiplier);
+                gameData.mana = Math.min(100, gameData.mana + rGain);
+                actionMessage = `Вы отдохнули и восстановили ману (+${rGain} Mana). Эффективность: ${Math.round(multiplier * 100)}%`;
+                break;
+            case 'upgradeWall':
+                gameData.upgrades.wallLevel++;
+                gameData.maxWallHealth += 50;
+                gameData.wallHealth += 50;
+                actionMessage = `Стены усилены до уровня ${gameData.upgrades.wallLevel}! Макс. здоровье: ${gameData.maxWallHealth}`;
+                break;
+            case 'buildTurret':
+                gameData.upgrades.turrets++;
+                actionMessage = `Построена магическая турель! Всего турелей: ${gameData.upgrades.turrets}. Оборона усилена.`;
+                break;
+            default:
+                actionMessage = "Вы потратили время впустую.";
+        }
+
+        logMessage(actionMessage);
+        updateUI();
+        playDayEffect(type, before);
+
+        // После каждого действия запускается фаза ночи (ждём, пока доиграет анимация дня)
+        setTimeout(() => this.nightPhase(), 1800);
+    },
+
+    async nightPhase() {
+        if (gameData.isGameOver || gameData.victory) return;
+
+        logMessage("--- Ночь наступила ---");
+        sceneElement.classList.add('is-night');
+        showFloatingText('Ночь', 'night', 50, 30);
+
+        const { power: enemyPower, wallFactor, caravanSupport } = plannedWave;
+        
+        // Потребление провизии (1 ед. на каждые 10 ед. силы стражи)
+        const foodNeeded = Math.ceil(gameData.guardStrength / 10);
+        if (gameData.supplies >= foodNeeded) {
+            gameData.supplies -= foodNeeded;
+            logMessage(`Стражники съели ${foodNeeded} ед. провизии.`);
+        } else {
+            const eaten = gameData.supplies;
+            gameData.supplies = 0;
+            const penalty = Math.ceil((foodNeeded - eaten) * 2);
+            gameData.guardStrength = Math.max(0, gameData.guardStrength - penalty);
+            logMessage(`Провизии не хватило! Стражники голодают. Сила упала на ${penalty}.`);
+        }
+
+        // Расход маны на щит (10% от силы волны)
+        const manaCost = Math.floor(enemyPower * 0.1);
+        if (gameData.mana >= manaCost) {
+            gameData.mana -= manaCost;
+            logMessage(`Магический щит поглотил часть удара (Затрачено маны: ${manaCost}).`);
+        } else {
+            const usedMana = gameData.mana;
+            gameData.mana = 0;
+            logMessage(`Мана почти иссякла! Щит слабеет.`);
+        }
+
+        const defense = Math.floor(gameData.wallHealth * wallFactor) + gameData.guardStrength + caravanSupport;
+        if (wallFactor < 1) logMessage('Летуны перелетают через стены. Учитывается половина их прочности.');
+        if (caravanSupport) logMessage(`Арбалетчики каравана открыли огонь (+${caravanSupport} к обороне).`);
+
+        logMessage(`Прибыла волна из Пустоты (Сила: ${enemyPower}). Ваша оборона: ${defense}`);
+
+        // Враги подбегают к стенам
+        const enemies = await sendWave(plannedWave);
+        if (caravanSupport && enemies.length) {
+            fireCaravanBolts(enemies);
+            await wait(450);
+        }
+
+        if (defense >= enemyPower) {
+            logMessage("Вы успешно отразили атаку!");
+            gameData.fragments += 5;
+            logMessage("Вы нашли 5 фрагментов среди обломков.");
+            await playDefense(enemies, updateUI);
+        } else {
+            const damage = enemyPower - defense;
+            gameData.wallHealth -= damage;
+            logMessage(`Стены повреждены! Получено урона: ${damage}`);
+
+            if (gameData.wallHealth <= 0) {
+                gameData.wallHealth = 0;
+                gameData.isGameOver = true;
+                logMessage("Ваш алтарь был разрушен. Игра окончена.");
+            }
+            await playBreach(enemies, damage, updateUI);
+        }
+
+        updateUI();
+        sceneElement.classList.remove('is-night');
+        delete sceneElement.dataset.event;
+
+        if (!gameData.isGameOver && !gameData.victory) {
+            gameData.day += 1;
+            if (gameData.day > gameData.maxDays) {
+                gameData.victory = true;
+                logMessage("Вы выстояли все 30 дней! Вы победили!");
+            } else {
+                plannedWave = planWave(gameData.day);
+                logMessage(`--- День ${gameData.day} --- Наступил новый день.`);
+                showFloatingText(`День ${gameData.day}`, 'day', 50, 30);
+                updateUI();
+                if (gameData.day === 2 || Math.random() < 0.3) {
+                    triggerRandomEvent();
+                    return;
+                }
+                announceWave();
+            }
+        }
+
+        // Ночь закончилась: снова можно действовать (если игра не окончена)
+        gameData.isBusy = false;
+        setActionsEnabled(!gameData.isGameOver && !gameData.victory);
+
+        if (gameData.isGameOver) await showEnding(false);
+        else if (gameData.victory) await showEnding(true);
+    }
+};
+
+// Инициализация
+logMessage("Добро пожаловать в Хранителя Алтаря...");
+updateUI();
